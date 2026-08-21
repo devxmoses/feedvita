@@ -62,4 +62,11 @@ export class UsersService {
     const { passwordHash: _omit, ...safeUser } = user;
     return safeUser;
   }
+
+  async findByEmailWithPassword(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+    return user; 
+  }
 }
