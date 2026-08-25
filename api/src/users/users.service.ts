@@ -11,22 +11,15 @@ export class UsersService {
 
   async create(createUserDto: CreateUserDto) {
     const passwordHash= await bcrypt.hash(createUserDto.password,10);
-    try {
-      const user = await this.prisma.user.create({
-        data:{
-          email:createUserDto.email,
-          passwordHash,
-          name:createUserDto.name,
-        }
-      });
-      const { passwordHash: _omit, ...safeUser } = user;
-      return safeUser;
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new ConflictException('A user with that email already exists');
+    const user = await this.prisma.user.create({
+      data:{
+        email:createUserDto.email,
+        passwordHash,
+        name:createUserDto.name,
       }
-      throw err;
-    }
+    });
+    const { passwordHash: _omit, ...safeUser } = user;
+    return safeUser;
   }
 
   async findAll() {
