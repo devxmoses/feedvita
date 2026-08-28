@@ -11,7 +11,7 @@ export class CreateProductDto {
 
     @IsInt()
     @Min(0)
-    priceMinor!:number
+    price!:number
 
     @IsOptional()
     @IsInt()

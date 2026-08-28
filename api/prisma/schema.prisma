@@ -22,6 +22,8 @@ model User {
   isAdmin       Boolean        @default(false)
   vendors       Vendor[]
   refreshTokens RefreshToken[]
+  orders        Order[]
+  cart          Cart?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -36,29 +38,87 @@ model RefreshToken {
 }
 
 model Vendor {
-  id          String    @id @default(cuid())
+  id          String      @id @default(cuid())
   name        String
-  slug        String    @unique
+  slug        String      @unique
   description String?
   ownerId     String
-  owner       User      @relation(fields: [ownerId], references: [id])
+  owner       User        @relation(fields: [ownerId], references: [id])
   products    Product[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  orderItems  OrderItem[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 }
 
 model Product {
-  id          String   @id @default(cuid())
+  id          String      @id @default(cuid())
   name        String
-  slug        String 
+  slug        String
   description String?
-  priceMinor  Int
-  stock       Int      @default(0)
-  isActive    Boolean  @default(true)
+  price       Int
+  stock       Int         @default(0)
+  isActive    Boolean     @default(true)
   vendorId    String
-  vendor      Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  vendor      Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  orderItems  OrderItem[]
+  cartItems   CartItem[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   @@unique([vendorId, slug])
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  buyerId   String
+  buyer     User        @relation(fields: [buyerId], references: [id])
+  status    OrderStatus @default(PENDING)
+  total     Int
+  items     OrderItem[]
+  createdAt DateTime    @default(now())
+  updated   DateTime    @updatedAt
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id])
+  productName String
+  quantity    Int
+  unitPrice   Int
+  createdAt   DateTime @default(now())
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId])
 }

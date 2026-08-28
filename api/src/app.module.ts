@@ -9,6 +9,8 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { VendorsModule } from './vendors/vendors.module';
 import { ProductsModule } from './products/products.module';
+import { OrdersModule } from './orders/orders.module';
+import { CartsModule } from './carts/carts.module';
 
 
 @Module({
@@ -21,6 +23,8 @@ import { ProductsModule } from './products/products.module';
     AuthModule,
     VendorsModule,
     ProductsModule,
+    OrdersModule,
+    CartsModule,
   ],
   controllers: [AppController],
   providers: [
