@@ -32,6 +32,9 @@ export class CreateProductDto {
     })
     slug?:string
 
+    @IsOptional()
+    @IsString()
+    categoryId?:string;
 
 
 }

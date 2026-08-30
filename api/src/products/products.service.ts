@@ -10,7 +10,18 @@ export class ProductsService {
 
   async create(createProductDto:CreateProductDto){
     const slug = slugify(createProductDto.slug??createProductDto.name);
-    return await this.prisma.product.create({
+    
+    if(createProductDto.categoryId){
+      const category = await this.prisma.category.findUnique({
+        where:{id:createProductDto.categoryId},
+      });
+      if(!category){
+        throw new NotFoundException(
+          `Category with ID ${createProductDto.categoryId} not found`
+        )
+      }
+    }
+    return this.prisma.product.create({
       data:{
         ...createProductDto,
         slug,
@@ -21,9 +32,12 @@ export class ProductsService {
   }
 
 
-  findAll(vendorId?:string){
+  findAll(vendorId?:string, categoryId?:string){
     return this.prisma.product.findMany({
-      where:vendorId?{vendorId}:undefined,
+      where:{
+        ...(vendorId?{vendorId}:{}),
+        ...(categoryId ? {categoryId} : {})
+      }
     });
   }
 
@@ -35,6 +49,18 @@ export class ProductsService {
 
   async update(id:string,updateProductDto:UpdateProductDto){
     await this.findOne(id);
+
+    if(updateProductDto.categoryId){
+      const category = await this.prisma.category.findUnique({
+        where:{id:updateProductDto.categoryId},
+      });
+      if(!category){
+        throw new NotFoundException(
+          `Category with ID ${updateProductDto.categoryId} not found`
+        )
+      }
+    }
+
     const {slug, ...rest} = updateProductDto;
     return this.prisma.product.update({
       where:{id},
