@@ -15,6 +15,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AdminModule } from './admin/admin.module';
 
 
 @Module({
@@ -38,6 +39,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
     CategoriesModule,
     ReviewsModule,
     PaymentsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [
