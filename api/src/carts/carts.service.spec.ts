@@ -20,7 +20,7 @@ describe('CartsService', () => {
   beforeEach(async () => {
     prisma = {
       product: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'p1', name: 'Layer Feed', isActive: true }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'p1', name: 'Cold Pressed Ginger Shot', isActive: true }),
       },
       cart: {
         findUnique: jest.fn().mockResolvedValue({ id: 'cart1', userId: 'u1', items: [] }),
@@ -73,7 +73,7 @@ describe('CartsService', () => {
     });
 
     it('rejects a deactivated product', async () => {
-      prisma.product.findUnique.mockResolvedValue({ id: 'p1', name: 'Layer Feed', isActive: false });
+      prisma.product.findUnique.mockResolvedValue({ id: 'p1', name: 'Cold Pressed Ginger Shot', isActive: false });
 
       await expect(service.addItem('u1', { productId: 'p1', quantity: 1 })).rejects.toThrow(
         BadRequestException,

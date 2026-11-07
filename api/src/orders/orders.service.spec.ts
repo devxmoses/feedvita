@@ -22,7 +22,7 @@ describe('OrdersService', () => {
 
   const aProduct = (over: Record<string, unknown> = {}) => ({
     id: 'p1',
-    name: 'Layer Feed',
+    name: 'Cold Pressed Ginger Shot',
     price: 1000,
     stock: 10,
     vendorId: 'v1',
@@ -132,14 +132,14 @@ describe('OrdersService', () => {
 
     it('snapshots name, unit price and vendor onto each order item', async () => {
       tx.cart.findUnique.mockResolvedValue(
-        aCart({ quantity: 2, product: aProduct({ name: 'Layer Feed', price: 1000, vendorId: 'v1' }) }),
+        aCart({ quantity: 2, product: aProduct({ name: 'Cold Pressed Ginger Shot', price: 1000, vendorId: 'v1' }) }),
       );
 
       await service.create('buyer1');
 
       const { data } = tx.order.create.mock.calls[0][0];
       expect(data.items.create).toEqual([
-        { productId: 'p1', vendorId: 'v1', productName: 'Layer Feed', quantity: 2, unitPrice: 1000 },
+        { productId: 'p1', vendorId: 'v1', productName: 'Cold Pressed Ginger Shot', quantity: 2, unitPrice: 1000 },
       ]);
     });
 

@@ -1,15 +1,15 @@
 services:
   test-db:
     image: postgres:16-alpine
-    container_name: feedvita-test-db
+    container_name: nuvita-test-db
     environment:
-      POSTGRES_USER: feedvita
-      POSTGRES_PASSWORD: feedvita
-      POSTGRES_DB: feedvita_test
+      POSTGRES_USER: nuvita
+      POSTGRES_PASSWORD: nuvita
+      POSTGRES_DB: nuvita_test
     ports:
       - '55432:5432'
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U feedvita -d feedvita_test']
+      test: ['CMD-SHELL', 'pg_isready -U nuvita -d nuvita_test']
       interval: 2s
       timeout: 3s
       retries: 15

@@ -24,7 +24,7 @@ describe('VendorsController', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('makes the authenticated user the owner of a new vendor', async () => {
-    const dto = { name: 'Green Valley Feeds' } as any;
+    const dto = { name: 'Green Valley Nutrition' } as any;
 
     await controller.create(asRequest('user-1'), dto);
 

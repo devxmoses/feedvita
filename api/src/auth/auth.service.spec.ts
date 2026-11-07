@@ -23,9 +23,9 @@ describe('AuthService', () => {
 
   const STORED_USER = {
     id: 'u1',
-    email: 'farmer@test.com',
-    name: 'Farmer',
-    passwordHash: '$2b$10$realhashforfarmeraccountxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    email: 'customer@test.com',
+    name: 'Customer',
+    passwordHash: '$2b$10$realhashforcustomeraccountxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
     isAdmin: false,
     isVendor: false,
   };
@@ -75,10 +75,10 @@ describe('AuthService', () => {
       users.findByEmailWithPassword.mockResolvedValue(STORED_USER);
       compare.mockResolvedValue(true);
 
-      const result = await service.validateUser('farmer@test.com', 'correct');
+      const result = await service.validateUser('customer@test.com', 'correct');
 
       expect(result).toEqual({
-        id: 'u1', email: 'farmer@test.com', name: 'Farmer', isAdmin: false, isVendor: false,
+        id: 'u1', email: 'customer@test.com', name: 'Customer', isAdmin: false, isVendor: false,
       });
       expect(result).not.toHaveProperty('passwordHash');
     });
@@ -87,7 +87,7 @@ describe('AuthService', () => {
       users.findByEmailWithPassword.mockResolvedValue(STORED_USER);
       compare.mockResolvedValue(false);
 
-      await expect(service.validateUser('farmer@test.com', 'wrong')).resolves.toBeNull();
+      await expect(service.validateUser('customer@test.com', 'wrong')).resolves.toBeNull();
     });
 
     it('returns null for an email with no account', async () => {
@@ -120,7 +120,7 @@ describe('AuthService', () => {
   });
 
   describe('login', () => {
-    const USER = { id: 'u1', email: 'farmer@test.com', isAdmin: false, isVendor: true };
+    const USER = { id: 'u1', email: 'customer@test.com', isAdmin: false, isVendor: true };
 
     it('returns both tokens', async () => {
       await expect(service.login(USER)).resolves.toEqual({
@@ -133,7 +133,7 @@ describe('AuthService', () => {
       await service.login(USER);
 
       expect(jwt.sign).toHaveBeenCalledWith(
-        { sub: 'u1', email: 'farmer@test.com', isAdmin: false, isVendor: true },
+        { sub: 'u1', email: 'customer@test.com', isAdmin: false, isVendor: true },
         { secret: 'access-secret', expiresIn: '15m' },
       );
     });
@@ -166,7 +166,7 @@ describe('AuthService', () => {
     beforeEach(() => {
       jwt.verify.mockReturnValue({ sub: 'u1' });
       users.findOne.mockResolvedValue({
-        id: 'u1', email: 'farmer@test.com', isAdmin: false, isVendor: false,
+        id: 'u1', email: 'customer@test.com', isAdmin: false, isVendor: false,
       });
     });
 

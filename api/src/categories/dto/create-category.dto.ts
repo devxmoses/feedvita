@@ -2,12 +2,12 @@ import { IsOptional, IsString, Matches, MinLength } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCategoryDto {
-    @ApiProperty({ example: 'Poultry Feed', minLength: 2 })
+    @ApiProperty({ example: 'Beverages', minLength: 2 })
     @IsString()
     @MinLength(2)
     name!: string
 
-    @ApiPropertyOptional({ example: 'poultry-feed', description: 'Auto-derived from name if omitted' })
+    @ApiPropertyOptional({ example: 'beverages', description: 'Auto-derived from name if omitted' })
     @IsOptional()
     @IsString()
     @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {

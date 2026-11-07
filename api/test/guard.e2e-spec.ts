@@ -1,12 +1,12 @@
 import { assertDisposableDatabase } from './global-setup';
 
 const NEON = 'postgresql://u:pw@ep-cool-x.eu-central-1.aws.neon.tech/neondb?sslmode=require';
-const LOCAL = 'postgresql://feedvita:feedvita@localhost:55432/feedvita_test';
+const LOCAL = 'postgresql://nuvita:nuvita@localhost:55432/nuvita_test';
 
 describe('e2e database guard', () => {
   it('accepts the local throwaway database', () => {
     expect(assertDisposableDatabase(LOCAL)).toEqual({
-      host: 'localhost', port: '55432', database: 'feedvita_test',
+      host: 'localhost', port: '55432', database: 'nuvita_test',
     });
   });
 
@@ -23,7 +23,7 @@ describe('e2e database guard', () => {
   });
 
   it('refuses a local database not named *_test', () => {
-    expect(() => assertDisposableDatabase('postgresql://u:p@localhost:5432/feedvita')).toThrow(
+    expect(() => assertDisposableDatabase('postgresql://u:p@localhost:5432/nuvita')).toThrow(
       /does not end in "_test"/,
     );
   });
