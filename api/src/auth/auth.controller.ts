@@ -77,6 +77,7 @@ export class AuthController {
     },
   })
   @ApiResponse({ status: 201, description: 'Refresh token invalidated' })
+  @ApiResponse({ status: 429, description: 'Too many attempts (5 per minute)'})
   @Post('logout')
   logout(@Body('refresh_token') refreshToken:string){
     return this.authService.logout(refreshToken);

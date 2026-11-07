@@ -36,7 +36,7 @@ export class CartsService {
 
 
   async updateItem(userId:string, productId:string,updateCartItemDto:UpdateCartItemDto){
-    const cart = await this.prisma.cart.findUnique({where:{id:userId}});
+    const cart = await this.prisma.cart.findUnique({where:{userId}});
     if(!cart) throw new NotFoundException(`Your cart is empty`);
 
     const item = await this.prisma.cartItem.findUnique({
@@ -51,7 +51,7 @@ export class CartsService {
   }
 
   async removeItem(userId:string,productId:string){
-    const cart = await this.prisma.cart.findUnique({where:{id:userId}});
+    const cart = await this.prisma.cart.findUnique({where:{userId}});
     if(!cart) throw new NotFoundException(`Your cart is empty`);
 
     const item = await this.prisma.cartItem.findUnique({
@@ -65,7 +65,7 @@ export class CartsService {
   }
 
   async clearCart(userId:string){
-    const cart = await this.prisma.cart.findUnique({where:{id:userId}});
+    const cart = await this.prisma.cart.findUnique({where:{userId}});
     if(!cart) return;
     await this.prisma.cartItem.deleteMany({where:{cartId:cart.id}});
   }

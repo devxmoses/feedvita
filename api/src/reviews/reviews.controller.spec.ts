@@ -3,39 +3,31 @@ import { ReviewsController } from './reviews.controller';
 import { ReviewsService } from './reviews.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+const asRequest = (id: string) => ({ user: { id } }) as any;
+
 describe('ReviewsController', () => {
   let controller: ReviewsController;
+  let service: { create: jest.Mock };
 
   beforeEach(async () => {
+    service = { create: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ReviewsController],
       providers: [
-        ReviewsService,
-        {
-          provide: PrismaService,
-          useValue: {
-            review: {
-              create: jest.fn(),
-              findMany: jest.fn(),
-              findUnique: jest.fn(),
-              update: jest.fn(),
-              delete: jest.fn(),
-            },
-            product: {
-              findUnique: jest.fn(),
-            },
-            orderItem: {
-              findFirst: jest.fn(),
-            },
-          },
-        },
+        { provide: ReviewsService, useValue: service },
+        { provide: PrismaService, useValue: {} },
       ],
     }).compile();
-
-    controller = module.get<ReviewsController>(ReviewsController);
+    controller = module.get(ReviewsController);
   });
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined();
+  afterEach(() => jest.clearAllMocks());
+
+  it('attributes a new review to the authenticated user', async () => {
+    const dto = { productId: 'p1', rating: 5 } as any;
+
+    await controller.create(asRequest('user-1'), dto);
+
+    expect(service.create).toHaveBeenCalledWith('user-1', dto);
   });
 });

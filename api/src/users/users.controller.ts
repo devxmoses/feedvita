@@ -1,7 +1,6 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -15,14 +14,6 @@ import { SelfOrAdminGuard } from '../auth/guards/self-or-admin.guard';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @ApiOperation({ summary: 'Register a new user' })
-  @ApiResponse({ status: 201, description: 'User created' })
-  @ApiResponse({ status: 409, description: 'Email already in use' })
-  @Post()
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
-  }
-
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List all users (admin only)' })
   @ApiResponse({ status: 200, description: 'List of users' })
@@ -34,10 +25,14 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
-  @ApiOperation({ summary: 'Get a single user by ID' })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get your own account or any, as admin' })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, description: 'The user' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'You can only access your own account' })
   @ApiResponse({ status: 404, description: 'User not found' })
+  @UseGuards(JwtAuthGuard, SelfOrAdminGuard)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
@@ -47,7 +42,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Update your own account (or any, as admin)' })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, description: 'User updated' })
-  @ApiResponse({ status: 403, description: 'You can only modify your own account' })
+  @ApiResponse({ status: 403, description: 'You can only access your own account' })
   @UseGuards(JwtAuthGuard, SelfOrAdminGuard)
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
@@ -59,7 +54,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Delete your own account (or any, as admin)' })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, description: 'User deleted' })
-  @ApiResponse({ status: 403, description: 'You can only modify your own account' })
+  @ApiResponse({ status: 403, description: 'You can only access your own account' })
   @UseGuards(JwtAuthGuard, SelfOrAdminGuard)
   @Delete(':id')
   remove(@Param('id') id: string) {

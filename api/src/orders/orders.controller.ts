@@ -45,7 +45,9 @@ export class OrdersController {
   @ApiOperation({ summary: 'Get a single order by ID' })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, description: 'The order' })
+  @ApiResponse({ status: 403, description: 'You can only view your own orders'})
   @ApiResponse({ status: 404, description: 'Order not found' })
+  @UseGuards(OrderOwnerOrAdminGuard)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.ordersService.findOne(id);
