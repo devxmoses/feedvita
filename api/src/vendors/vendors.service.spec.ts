@@ -8,7 +8,7 @@ describe('VendorsService', () => {
   let prisma: any;
   let tx: { vendor: Record<string, jest.Mock>; user: Record<string, jest.Mock> };
 
-  const VENDOR = { id: 'v1', name: 'Green Valley Feeds', slug: 'green-valley-feeds', ownerId: 'u1' };
+  const VENDOR = { id: 'v1', name: 'Green Valley Nutrition', slug: 'green-valley-nutrition', ownerId: 'u1' };
 
   beforeEach(async () => {
     tx = {
@@ -38,13 +38,13 @@ describe('VendorsService', () => {
 
   describe('create', () => {
     it('derives the slug from the name when none is given', async () => {
-      await service.create('u1', { name: 'Green Valley Feeds!' });
+      await service.create('u1', { name: 'Green Valley Nutrition!' });
 
       expect(tx.vendor.create).toHaveBeenCalledWith({
         data: {
-          name: 'Green Valley Feeds!',
+          name: 'Green Valley Nutrition!',
           description: undefined,
-          slug: 'green-valley-feeds',
+          slug: 'green-valley-nutrition',
           ownerId: 'u1',
         },
       });
@@ -57,7 +57,7 @@ describe('VendorsService', () => {
     });
 
     it('owns the vendor to the caller, not to anything in the body', async () => {
-      await service.create('u1', { name: 'Green Valley Feeds' });
+      await service.create('u1', { name: 'Green Valley Nutrition' });
 
       expect(tx.vendor.create.mock.calls[0][0].data.ownerId).toBe('u1');
     });
@@ -65,7 +65,7 @@ describe('VendorsService', () => {
     // Creating the vendor and flipping isVendor must not be separable - a crash
     // between them would leave a vendor whose owner cannot act as one.
     it('flips the owner to isVendor inside the same transaction', async () => {
-      await service.create('u1', { name: 'Green Valley Feeds' });
+      await service.create('u1', { name: 'Green Valley Nutrition' });
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(tx.user.update).toHaveBeenCalledWith({
@@ -75,7 +75,7 @@ describe('VendorsService', () => {
     });
 
     it('returns the created vendor', async () => {
-      await expect(service.create('u1', { name: 'Green Valley Feeds' })).resolves.toEqual(VENDOR);
+      await expect(service.create('u1', { name: 'Green Valley Nutrition' })).resolves.toEqual(VENDOR);
     });
   });
 

@@ -13,14 +13,14 @@ describe('UsersService', () => {
 
   const ROW = {
     id: 'u1',
-    email: 'farmer@test.com',
-    name: 'Farmer',
+    email: 'customer@test.com',
+    name: 'Customer',
     passwordHash: 'HASHED',
     isAdmin: false,
     isVendor: false,
   };
   const SAFE = {
-    id: 'u1', email: 'farmer@test.com', name: 'Farmer', isAdmin: false, isVendor: false,
+    id: 'u1', email: 'customer@test.com', name: 'Customer', isAdmin: false, isVendor: false,
   };
 
   beforeEach(async () => {
@@ -44,7 +44,7 @@ describe('UsersService', () => {
 
   describe('create', () => {
     it('hashes the password at cost 10 and stores no plaintext', async () => {
-      await service.create({ email: 'farmer@test.com', password: 'secret123', name: 'Farmer' });
+      await service.create({ email: 'customer@test.com', password: 'secret123', name: 'Customer' });
 
       expect(hash).toHaveBeenCalledWith('secret123', 10);
 
@@ -56,7 +56,7 @@ describe('UsersService', () => {
 
     it('returns the user without the password hash', async () => {
       await expect(
-        service.create({ email: 'farmer@test.com', password: 'secret123', name: 'Farmer' }),
+        service.create({ email: 'customer@test.com', password: 'secret123', name: 'Customer' }),
       ).resolves.toEqual(SAFE);
     });
   });
@@ -95,7 +95,7 @@ describe('UsersService', () => {
     });
 
     it('strips the password hash from the updated user', async () => {
-      await expect(service.update('u1', { name: 'Farmer' })).resolves.toEqual(SAFE);
+      await expect(service.update('u1', { name: 'Customer' })).resolves.toEqual(SAFE);
     });
   });
 
@@ -109,9 +109,9 @@ describe('UsersService', () => {
   describe('findByEmailWithPassword', () => {
     // the one method that must return the hash - AuthService needs it to compare
     it('returns the row with its hash intact', async () => {
-      await expect(service.findByEmailWithPassword('farmer@test.com')).resolves.toEqual(ROW);
+      await expect(service.findByEmailWithPassword('customer@test.com')).resolves.toEqual(ROW);
       expect(prisma.user.findUnique).toHaveBeenCalledWith({
-        where: { email: 'farmer@test.com' },
+        where: { email: 'customer@test.com' },
       });
     });
 

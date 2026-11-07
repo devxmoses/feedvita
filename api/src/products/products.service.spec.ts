@@ -8,10 +8,10 @@ describe('ProductsService', () => {
   let prisma: any;
 
   const PRODUCT = {
-    id: 'p1', name: 'Layer Feed 20kg', slug: 'layer-feed-20kg',
+    id: 'p1', name: 'Cold Pressed Ginger Shot 250ml', slug: 'cold-pressed-ginger-shot-250ml',
     price: 4999, stock: 10, isActive: true, vendorId: 'v1',
   };
-  const BASE = { name: 'Layer Feed 20kg', price: 4999, vendorId: 'v1' };
+  const BASE = { name: 'Cold Pressed Ginger Shot 250ml', price: 4999, vendorId: 'v1' };
 
   beforeEach(async () => {
     prisma = {
@@ -22,7 +22,7 @@ describe('ProductsService', () => {
         update: jest.fn().mockResolvedValue(PRODUCT),
         delete: jest.fn().mockResolvedValue(PRODUCT),
       },
-      category: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'Poultry' }) },
+      category: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'Beverages' }) },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -35,15 +35,15 @@ describe('ProductsService', () => {
 
   describe('create', () => {
     it('derives the slug from the name', async () => {
-      await service.create({ ...BASE, name: 'Layer Feed 20kg' });
+      await service.create({ ...BASE, name: 'Cold Pressed Ginger Shot 250ml' });
 
-      expect(prisma.product.create.mock.calls[0][0].data.slug).toBe('layer-feed-20kg');
+      expect(prisma.product.create.mock.calls[0][0].data.slug).toBe('cold-pressed-ginger-shot-250ml');
     });
 
     it('normalises a slug that was supplied', async () => {
-      await service.create({ ...BASE, slug: 'Layer FEED 20kg' });
+      await service.create({ ...BASE, slug: 'Cold PRESSED Ginger Shot 250ml' });
 
-      expect(prisma.product.create.mock.calls[0][0].data.slug).toBe('layer-feed-20kg');
+      expect(prisma.product.create.mock.calls[0][0].data.slug).toBe('cold-pressed-ginger-shot-250ml');
     });
 
     // A product that defaulted to null stock would break the checkout decrement.

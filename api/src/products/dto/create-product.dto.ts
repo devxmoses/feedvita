@@ -2,7 +2,7 @@ import {Matches, Min, IsBoolean, IsInt, IsOptional, IsString, MinLength } from "
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProductDto {
-    @ApiProperty({example: 'Premium Layer Feed 20kg', minLength:2})
+    @ApiProperty({example: 'Cold Pressed Ginger Shot 250ml', minLength:2})
     @IsString()
     @MinLength(2)
     name!:string
@@ -32,7 +32,7 @@ export class CreateProductDto {
     @IsString()
     vendorId!:string;
 
-    @ApiPropertyOptional({ example: 'premium-layer-feed-20kg', description: 'Auto-derived from name if omitted' })
+    @ApiPropertyOptional({ example: 'cold-pressed-ginger-shot-250ml', description: 'Auto-derived from name if omitted' })
     @IsOptional()
     @IsString()
     @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/,{

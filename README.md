@@ -1,17 +1,20 @@
 <div align="center">
 
-# FeedVita
+# Nuvita
 
-### A multivendor marketplace connecting animal owners and farmers directly with feed suppliers
+### A multi-vendor marketplace for food, beverages, wellness products and equipment — for people, pets and livestock
 
-![NestJS](https://img.shields.io/badge/NestJS-10-E0234E?style=flat-square&logo=nestjs&logoColor=white)
+![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=next.js&logoColor=white)
-![Prisma](https://img.shields.io/badge/Prisma-5-2D3748?style=flat-square&logo=prisma&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?style=flat-square&logo=prisma&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)
-![Stripe](https://img.shields.io/badge/Stripe-Payments-635BFF?style=flat-square&logo=stripe&logogitColor=white)
+![Stripe](https://img.shields.io/badge/Stripe-Payments-635BFF?style=flat-square&logo=stripe&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-201%20unit%20%2B%2031%20e2e-success?style=flat-square)
 
-`npm workspaces` · `App Router` · `JWT Auth` · `BullMQ` · `Redis` · `Docker` · `Swagger`
+`JWT rotation` · `RBAC` · `Persisted cart` · `Atomic checkout` · `Stripe webhooks` · `Swagger`
+
+**Work in progress.** Everything below is marked ✅ built or 🚧 planned.
 
 </div>
 
@@ -19,394 +22,454 @@
 
 ## About
 
-FeedVita is a production grade multivendor ecommerce platform built with next js and nest js to streamline the purchase and delivery of animal feeds and aims to connect animal owners and farmers directly with feed suppliers. Vendors manage their own storefronts, products, inventory, and fulfillment, customers discover and order from multiple vendors in a single checkout, this orders are automatically split per vendor behind the scenes using Prisma transactions.
+Nuvita is a multi-vendor commerce platform for nutrition and wellness — food,
+beverages, supplements and the equipment that goes with them — serving both human
+and animal customers across pets and livestock.
+
+Vendors run their own storefronts, catalogue and inventory. Customers build a
+server-side cart across vendors and check out once; the API turns that cart into an
+order with immutable line-item snapshots while decrementing stock atomically.
+Payment runs through Stripe PaymentIntents behind a signature-verified webhook.
+
+The product taxonomy is a self-referential category tree, so the human/pet/livestock
+split and everything beneath it — `Livestock › Poultry › Layer Feed`,
+`Humans › Beverages › Cold Pressed`, `Pets › Equipment › Feeders` — is data rather
+than schema.
+
+The API is the part that exists today. The web client, background jobs and
+per-vendor fulfilment are next.
 
 ---
 
-## User Roles
+## Status at a glance
 
-| Role | Capabilities |
+| Area | State |
 |---|---|
-|  **CUSTOMER** | Browse by animal type, multivendor cart, track orders, leave reviews, saved addresses |
-|  **Vendor** | Manage storefront, list products & variants, fulfill orders, set delivery zones, Stripe payouts |
-|  **Admin** | Approve vendors, platform analytics, manage categories, handle disputes, monitor orders |
+| REST API — 11 NestJS modules | ✅ built |
+| JWT auth, refresh rotation, reuse detection | ✅ built |
+| RBAC + per-resource ownership guards | ✅ built |
+| Persisted cart → atomic checkout → cancellation with restock | ✅ built |
+| Stripe PaymentIntents + idempotent webhook | ✅ built |
+| Category tree, reviews gated on delivered purchase | ✅ built |
+| Admin analytics | ✅ built |
+| Rate limiting, global exception mapping, OpenAPI docs | ✅ built |
+| Test suite — 201 unit, 31 end-to-end | ✅ built |
+| `/api/v1` global prefix | 🚧 planned |
+| Per-vendor order splitting (`VendorOrder`) | 🚧 planned |
+| `ProductVariant`, `Address`, `DeliveryZone`, `Notification` | 🚧 planned |
+| Vendor approval flow | 🚧 planned |
+| Redis + BullMQ background jobs | 🚧 planned |
+| S3 / Cloudinary uploads | 🚧 planned |
+| WebSocket order updates | 🚧 planned |
+| Stripe Connect vendor payouts | 🚧 planned |
+| Next.js 15 web client | 🚧 planned |
 
 ---
 
-## Features
+## Roles
 
--  **Multivendor Storefronts** — Each vendor gets an isolated storefront with logo, banner, ratings, and custom delivery zones
--  **Order Splitting** — Single checkout splits into per-vendor orders transactionally; stock decrements atomically via `prisma.$transaction`
--  **Stripe Payments** — Payment intents, webhook handling, and vendor payouts via Stripe Connect
--  **Animal-Type Filtering** — Products tagged by animal type (cattle, poultry, swine, aquaculture, and more)
--  **Real-time Notifications** — Order status updates pushed via WebSockets; background jobs via BullMQ
--  **JWT Auth + RBAC** — Access + refresh token rotation with role guards for `CUSTOMER`, `VENDOR`, and `ADMIN` routes
+| Role | Can |
+|---|---|
+| **Customer** | ✅ browse vendors, products, categories · manage a cart · check out · cancel while `PENDING` · review delivered purchases · 🚧 saved addresses, order tracking |
+| **Vendor** | ✅ create storefronts · manage own products and stock · read order items for own vendors · 🚧 fulfil per-vendor orders, set delivery zones, Stripe Connect payouts |
+| **Admin** | ✅ manage categories · move any order's status · platform analytics · 🚧 approve vendors, handle disputes |
+
+Roles are boolean flags on `User` (`isVendor`, `isAdmin`) carried in the access token,
+so guards authorize without a database round trip.
+
+Vendor status is currently self-service — creating a vendor flips `isVendor` on the
+owner inside the same transaction. The approval queue (🚧) will move that flip to the
+moment an admin approves.
 
 ---
 
-## Architecture
+## Target architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│           Next.js 15 — App Router (SSR + RSC)                │
-│     (customer) │ (vendor) │ (admin) │ API route handlers        │
+│        🚧 Next.js 15 — App Router (SSR + RSC)                │
+│    (customer) │ (vendor) │ (admin) │ route handlers          │
 └─────────────────────────┬────────────────────────────────────┘
-                          │ HTTPS / REST + WebSocket
+                          │ HTTPS / REST  ·  🚧 WebSocket
 ┌─────────────────────────▼────────────────────────────────────┐
-│              NestJS 10 — Modular REST API                     │
-│    Auth │ Guards │ Interceptors │ Pipes │ Exception Filters   │
+│          ✅ NestJS 11 — Modular REST API                      │
+│   Auth │ Guards │ Pipes │ Exception Filters │ Throttler       │
 └──────┬───────────────┬───────────────────┬────────────────────┘
        │               │                   │
  ┌─────▼──────┐  ┌─────▼──────┐   ┌───────▼───────┐
- │ Prisma ORM │  │   Redis     │   │  Stripe API   │
- │            │  │  + BullMQ   │   │               │
+ │ ✅ Prisma 7 │  │ 🚧 Redis    │   │ ✅ Stripe API  │
+ │  + pg      │  │  + BullMQ   │   │  🚧 Connect    │
  └─────┬──────┘  └────────────┘   └───────────────┘
        │
- ┌─────▼──────┐
- │ PostgreSQL │
- └────────────┘
+ ┌─────▼──────────┐   ┌──────────────┐
+ │ ✅ PostgreSQL 16│   │ 🚧 S3 /       │
+ │                │   │   Cloudinary  │
+ └────────────────┘   └──────────────┘
 ```
 
-### Architectural Patterns
+### Patterns
 
-- **Monorepo** via `npm workspaces` (`apps/api`, `apps/web`, `packages/*`)
-- **Domain-driven modules** in NestJS — one module per business domain
-- **Repository pattern** abstracted via a global `PrismaService`
-- **JWT refresh token rotation** — short-lived access tokens (15m) + hashed refresh tokens (7d)
-- **Atomic order splitting** — cart items grouped by vendor inside a single `$transaction`
-- **BullMQ queues** for async jobs: email, order processing, Stripe payouts
+- ✅ **Domain-driven modules** — one NestJS module per business domain
+- ✅ **Global `PrismaService`** with the Prisma 7 `pg` driver adapter
+- ✅ **JWT refresh rotation** — 15m access tokens, SHA-256-hashed 7d refresh tokens
+- ✅ **Atomic checkout** — stock decrement, order creation and cart clearing in one `$transaction`
+- ✅ **Centralised Prisma error mapping** — `P2002` → 409, `P2025` → 404, `P2003` → 400
+- 🚧 **Monorepo** via npm workspaces (`apps/api`, `apps/web`, `packages/*`)
+- 🚧 **Order splitting** — cart grouped by vendor into `VendorOrder` rows in one transaction
+- 🚧 **BullMQ queues** for email, order processing and payouts
 
 ---
 
-## Tech Stack
+## Domain model
 
-### Backend
+### Today ✅
 
-| Layer | Technology |
-|---|---|
-| Framework | NestJS 10 |
-| Language | TypeScript 5 |
-| ORM | Prisma 5 |
-| Database | PostgreSQL 16 |
-| Cache / Queue | Redis + BullMQ |
-| Auth | Passport.js + JWT |
-| Payments | Stripe |
-| File Storage | AWS S3 / Cloudinary |
-| Email | Nodemailer + SendGrid |
-| Docs | Swagger (OpenAPI 3) |
-| Testing | Jest + Supertest |
+```
+User  (isVendor / isAdmin flags)
+ ├── RefreshToken (1:N)   hashed, rotated on use
+ ├── Vendor (1:N)         a user may run several storefronts
+ │    └── Product (1:N)
+ ├── Cart (1:1)           persisted server-side
+ │    └── CartItem (1:N)  unique per (cart, product)
+ ├── Order (1:N)
+ │    └── OrderItem (1:N) snapshots productName + unitPrice at purchase
+ └── Review (1:N)         unique per (product, author)
 
-### Frontend
+Category   self-referential tree (parent / children)
+ └── Product (1:N)
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 15 (App Router) |
-| Language | TypeScript 5 |
-| Styling | Tailwind CSS v4 |
-| UI Components | shadcn/ui |
-| State | Zustand |
-| Data Fetching | TanStack Query (React Query) |
-| Forms | React Hook Form + Zod |
-| Payments | Stripe.js Elements |
-| Charts | Recharts |
-| Testing | Vitest + Playwright |
+Payment → Order (1:N)     one row per Stripe PaymentIntent
+
+OrderStatus    PENDING · PAID · SHIPPED · DELIVERED · CANCELLED
+PaymentStatus  PENDING · SUCCEEDED · FAILED
+```
+
+### Planned 🚧
+
+```
+Order
+ └── VendorOrder (1:N)    one per vendor in the cart; status moves per vendor
+      └── OrderItem (1:N) re-parented from Order
+
+Product
+ └── ProductVariant (1:N) price + stock move down to the variant
+
+Vendor
+ ├── DeliveryZone (1:N)
+ └── status              PENDING_APPROVAL · APPROVED · SUSPENDED
+
+User
+ ├── Address (1:N)       Order gains a shippingAddressId
+ └── Notification (1:N)  delivered over WebSocket
+```
+
+Both planned changes are migrations with real reach — see **Roadmap** for the order
+they're sequenced in and why.
 
 ---
 
-## Repository Structure
+## Design notes
+
+The decisions in the code worth knowing about. All of these are built.
+
+**Money is stored in minor units.** `Product.price` and `Order.total` are `Int` — cents,
+kobo, pence. No floating point anywhere near a price.
+
+**Checkout is one transaction.** `POST /orders` loads the cart, decrements each product's
+stock with a conditional `updateMany` (`WHERE stock >= quantity`), writes the order with
+price snapshots, and clears the cart — all inside a single `$transaction`. A `count` of 0
+from the decrement means someone else took the stock first, and the whole thing rolls
+back with `409`.
+
+**Line items are immutable.** `OrderItem` stores `productName` and `unitPrice` as they were
+at purchase, so a vendor renaming or repricing never rewrites history.
+`OrderItem.product` uses `onDelete: Restrict`; `CartItem.product` uses `Cascade`, because
+a cart is ephemeral and an order is a record.
+
+**Cancellation restocks.** `PATCH /orders/:id/cancel` re-reads the status inside the
+transaction, refuses anything but `PENDING`, and increments stock back. `PATCH /orders/:id`
+explicitly rejects `CANCELLED` so the restock path cannot be bypassed.
+
+**Refresh tokens rotate, and reuse is detected.** Tokens are stored as SHA-256 hashes and
+consumed with a conditional delete. A token that verifies but has no row was already
+redeemed — treated as theft, and every session for that user is dropped. A token that
+merely aged out retires only itself.
+
+**Login timing is constant.** An unknown email is compared against a dummy bcrypt hash at
+the same cost factor, so response time cannot be used to enumerate registered addresses.
+
+**Stripe calls are idempotent.** `createIntent` passes an idempotency key derived from the
+order, so a reloaded checkout page gets the same intent back rather than a second payable
+one. The webhook acknowledges intents it holds no row for — rather than erroring and
+triggering three days of retries — and refuses to mark a cancelled order paid.
+
+---
+
+## API reference
+
+No global prefix yet (`/api/v1` is 🚧). Interactive docs at `/api/docs`.
+
+### Auth
+| Method | Endpoint | Access | Notes |
+|---|---|---|---|
+| `POST` | `/auth/register` | public | returns a token pair · 5/min |
+| `POST` | `/auth/login` | public | returns a token pair · 5/min |
+| `POST` | `/auth/refresh` | public | rotates the pair · 5/min |
+| `POST` | `/auth/logout` | public | invalidates one refresh token · 5/min |
+
+### Users
+| Method | Endpoint | Access |
+|---|---|---|
+| `GET` | `/users` | admin |
+| `GET` · `PATCH` · `DELETE` | `/users/:id` | self or admin |
+
+### Vendors
+| Method | Endpoint | Access |
+|---|---|---|
+| `POST` | `/vendors` | authenticated |
+| `GET` | `/vendors`, `/vendors/:id` | public |
+| `PATCH` · `DELETE` | `/vendors/:id` | vendor owner or admin |
+
+### Products
+| Method | Endpoint | Access |
+|---|---|---|
+| `POST` | `/products` | owner of the target vendor |
+| `GET` | `/products?vendorId=&categoryId=` | public |
+| `GET` | `/products/:id` | public |
+| `PATCH` · `DELETE` | `/products/:id` | product's vendor owner or admin |
+
+### Categories
+| Method | Endpoint | Access |
+|---|---|---|
+| `POST` · `PATCH` · `DELETE` | `/categories[/:id]` | admin |
+| `GET` | `/categories`, `/categories/:id` | public |
+
+### Cart — all authenticated, always scoped to the caller
+| Method | Endpoint |
+|---|---|
+| `GET` | `/cart` |
+| `POST` | `/cart/items` |
+| `PATCH` · `DELETE` | `/cart/items/:productId` |
+| `DELETE` | `/cart` |
+
+### Orders — all authenticated
+| Method | Endpoint | Access |
+|---|---|---|
+| `POST` | `/orders` | checks out the caller's cart |
+| `GET` | `/orders` | the caller's own orders |
+| `GET` | `/orders/vendor/:vendorId` | that vendor's owner |
+| `GET` | `/orders/:id` | buyer or admin |
+| `PATCH` | `/orders/:id` | admin — set status |
+| `PATCH` | `/orders/:id/cancel` | buyer or admin, `PENDING` only |
+
+### Reviews
+| Method | Endpoint | Access |
+|---|---|---|
+| `POST` | `/reviews` | authenticated, delivered purchase required |
+| `GET` | `/reviews?productId=`, `/reviews/:id` | public |
+| `PATCH` · `DELETE` | `/reviews/:id` | author or admin |
+
+### Payments · Admin · Health
+| Method | Endpoint | Access |
+|---|---|---|
+| `POST` | `/payments/create-intent` | authenticated, own `PENDING` order |
+| `POST` | `/payments/webhook` | Stripe signature |
+| `GET` | `/admin/stats` | admin |
+| `GET` | `/health` | public |
+
+A global rate limit of 100 requests/minute applies, auth routes are tightened to
+5/minute, and the Stripe webhook is exempt.
+
+---
+
+## Repository structure
+
+### Today
 
 ```
-feedmart/
-├── apps/
-│   ├── api/                          # NestJS Backend
-│   │   ├── src/
-│   │   │   ├── main.ts
-│   │   │   ├── app.module.ts
-│   │   │   ├── common/               # Shared utilities
-│   │   │   │   ├── decorators/
-│   │   │   │   ├── filters/
-│   │   │   │   ├── guards/
-│   │   │   │   ├── interceptors/
-│   │   │   │   └── pipes/
-│   │   │   ├── config/
-│   │   │   ├── prisma/
-│   │   │   └── modules/
-│   │   │       ├── auth/
-│   │   │       ├── users/
-│   │   │       ├── vendors/
-│   │   │       ├── products/
-│   │   │       ├── categories/
-│   │   │       ├── orders/
-│   │   │       ├── payments/
-│   │   │       ├── reviews/
-│   │   │       ├── notifications/
-│   │   │       ├── uploads/
-│   │   │       └── admin/
+nuvita/
+├── api/                           # NestJS API
+│   ├── src/
+│   │   ├── main.ts
+│   │   ├── app.module.ts
+│   │   ├── common/
+│   │   │   ├── filters/           # global Prisma → HTTP mapping
+│   │   │   └── utils/
 │   │   ├── prisma/
-│   │   │   ├── schema.prisma
-│   │   │   └── migrations/
-│   │   └── Dockerfile
-│   │
-│   └── web/                          # Next.js Frontend
-│       ├── src/
-│       │   ├── app/
-│       │   │   ├── (auth)/
-│       │   │   ├── (customer)/
-│       │   │   ├── (vendor)/
-│       │   │   └── (admin)/
-│       │   ├── components/
-│       │   │   ├── ui/               # shadcn/ui primitives
-│       │   │   ├── customer/
-│       │   │   ├── vendor/
-│       │   │   └── admin/
-│       │   ├── lib/
-│       │   ├── hooks/
-│       │   ├── stores/               # Zustand stores
-│       │   └── types/
-│       └── Dockerfile
-│
-├── packages/
-│   ├── types/                        # Shared TypeScript types
-│   ├── utils/                        # Shared utilities
-│   └── config/                       # Shared eslint/tsconfig
-│
-├── docker-compose.yml
-├── npm-workspace.yaml
+│   │   ├── auth/      users/      vendors/
+│   │   ├── products/  categories/ carts/
+│   │   ├── orders/    reviews/    payments/
+│   │   └── admin/
+│   ├── prisma/
+│   │   ├── schema.prisma
+│   │   └── migrations/
+│   ├── test/                      # e2e suite + disposable-DB guard
+│   └── docker-compose.test.yml
 └── README.md
 ```
 
+### Planned 🚧
+
+`api/` becomes `apps/api`, joined by `apps/web` (Next.js) and `packages/{types,utils,config}`
+under npm workspaces.
+
 ---
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
 - Node.js 20+
-- npm 9+
-- Docker + Docker Compose
-- Stripe account (for payments)
+- PostgreSQL 16 (or a managed instance)
+- Docker, for the test database
+- A Stripe account in test mode
 
-### Installation
+### Install and run
 
 ```bash
-# Clone the repo
-git clone https://github.com/yourusername/feedmart.git
-cd feedmart
+git clone <your-repo-url> nuvita
+cd nuvita/api
 
-# Install all dependencies
 npm install
+cp .env.example .env        # then fill it in
 
-# Start Postgres + Redis via Docker
-docker-compose up -d
-
-# Copy environment files
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env.local
-
-# Run database migrations
-cd apps/api
-npx prisma migrate dev
+npx prisma migrate deploy
 npx prisma generate
 
-# (Optional) Seed categories and test data
-npx prisma db seed
-
-# Start all apps from root
-cd ../..
-npm dev
+npm run start:dev
 ```
 
-> API → `http://localhost:3001/api/v1`  
-> Web → `http://localhost:3000`  
-> Swagger Docs → `http://localhost:3001/api/docs`
+> API → `http://localhost:3000`
+> Swagger → `http://localhost:3000/api/docs`
 
----
-
-## Environment Variables
-
-### `apps/api/.env`
+### Environment
 
 ```env
-# Database
-DATABASE_URL="postgresql://user:password@localhost:5432/feedmart"
+DATABASE_URL="postgresql://user:password@localhost:5432/nuvita"
 
-# JWT
-JWT_ACCESS_SECRET="your-super-secret-access-key"
-JWT_REFRESH_SECRET="your-super-secret-refresh-key"
+JWT_SECRET="..."
+JWT_REFRESH_SECRET="..."
 
-# Stripe
 STRIPE_SECRET_KEY="sk_test_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
 
-# AWS S3
-AWS_REGION="us-east-1"
-AWS_ACCESS_KEY_ID="..."
-AWS_SECRET_ACCESS_KEY="..."
-AWS_S3_BUCKET="feedmart-uploads"
-
-# Redis
-REDIS_URL="redis://localhost:6379"
-
-# App
-PORT=3001
-FRONTEND_URL="http://localhost:3000"
-```
-
-### `apps/web/.env.local`
-
-```env
-NEXT_PUBLIC_API_URL="http://localhost:3001/api/v1"
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_test_..."
+PORT=3000
 ```
 
 ---
 
-## API Reference
+## Testing
 
-All endpoints are prefixed with `/api/v1`. Full interactive docs available at `/api/docs` (Swagger UI).
+```bash
+npx tsc --noEmit        # type check first - it catches what Jest cannot
+npm test                # 201 unit tests
 
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `POST` | `/auth/register` | Public | Register new user |
-| `POST` | `/auth/login` | Public | Login |
-| `POST` | `/auth/refresh` | Refresh Token | Rotate access token |
-| `POST` | `/auth/logout` | JWT | Invalidate refresh token |
-| `GET` | `/products` | Public | List products (paginated, filterable) |
-| `GET` | `/products/:slug` | Public | Product detail with reviews |
-| `POST` | `/products` | Vendor | Create product |
-| `PATCH` | `/products/:id` | Vendor | Update own product |
-| `DELETE` | `/products/:id` | Vendor | Soft-delete product |
-| `GET` | `/vendors/:slug` | Public | Vendor storefront |
-| `POST` | `/vendors/apply` | JWT | Apply to become a vendor |
-| `GET` | `/orders` | JWT | Authenticated user's orders |
-| `POST` | `/orders` | CUSTOMER | Place order (multi-vendor cart) |
-| `PATCH` | `/orders/vendor/:id/status` | Vendor | Update vendor order status |
-| `POST` | `/payments/create-intent` | CUSTOMER | Create Stripe payment intent |
-| `POST` | `/payments/webhook` | Stripe | Stripe webhook handler |
-| `GET` | `/categories` | Public | List all categories |
-| `POST` | `/reviews` | CUSTOMER | Post a product review |
-| `GET` | `/admin/vendors` | Admin | List all vendors |
-| `PATCH` | `/admin/vendors/:id/approve` | Admin | Approve vendor |
-| `GET` | `/admin/stats` | Admin | Platform analytics |
+npm run test:e2e:up     # start the throwaway Postgres container
+npm run test:e2e        # 31 tests against a real database
+npm run test:e2e:down   # tear it down
+```
+
+The end-to-end suite truncates every table before each test, so it refuses to start
+unless `DATABASE_URL` points at a **loopback host** whose database name ends in `_test`.
+`npm run test:e2e` supplies that URL inline; running Jest against the e2e config by hand
+is blocked rather than pointed at your development database.
+
+Coverage includes checkout, stock exhaustion, cancellation and restock, cross-user
+authorization on orders, vendors, products and accounts, review eligibility, the
+one-review-per-buyer database constraint, admin role gating, and DTO validation.
 
 ---
 
-## Database Schema
+## Tech stack
 
-```
-User (CUSTOMER | VENDOR | ADMIN)
- ├── Vendor (1:1)
- │    ├── Product (1:N)
- │    │    └── ProductVariant (1:N)
- │    ├── VendorOrder (1:N)
- │    │    └── OrderItem (1:N)
- │    └── DeliveryZone (1:N)
- ├── Order (1:N)  ←── top-level customer order
- │    └── VendorOrder (1:N)  ←── one per vendor in cart
- ├── Review (1:N)
- ├── Address (1:N)
- └── Notification (1:N)
+### Backend
 
-Category (self-referential tree for subcategories)
- └── Product (N:1)
-```
+| Layer | Technology | State |
+|---|---|---|
+| Framework | NestJS 11 | ✅ |
+| Language | TypeScript 5 | ✅ |
+| ORM | Prisma 7 + `pg` driver adapter | ✅ |
+| Database | PostgreSQL 16 | ✅ |
+| Auth | Passport (local + JWT), bcrypt | ✅ |
+| Payments | Stripe PaymentIntents + webhooks | ✅ |
+| Rate limiting | `@nestjs/throttler` | ✅ |
+| Docs | Swagger / OpenAPI 3 | ✅ |
+| Testing | Jest, Supertest, Dockerised Postgres | ✅ |
+| Cache / Queue | Redis + BullMQ | 🚧 |
+| File storage | S3 / Cloudinary | 🚧 |
+| Email | Nodemailer + SendGrid | 🚧 |
+| Realtime | Socket.IO | 🚧 |
+| Payouts | Stripe Connect | 🚧 |
 
----
+### Frontend 🚧
 
-## Authentication Flow
-
-```
-1. POST /auth/register or /auth/login
-      └── returns accessToken (15min) + refreshToken (7d)
-
-2. Every API request
-      └── Authorization: Bearer <accessToken>
-
-3. On 401 Unauthorized
-      └── POST /auth/refresh with refreshToken → new token pair
-
-4. POST /auth/logout
-      └── refresh token nullified in DB → session invalidated
-```
-
-Role guards are applied per route using `@Roles()` decorator + `RolesGuard`:
-
-```typescript
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.VENDOR)
-@Post('products')
-createProduct() {}
-```
-
----
-
-## Deployment
-
-### Recommended Services
-
-| Service | Purpose |
-|---|---|
-| Vercel | Next.js frontend |
-| Railway / Render | NestJS API |
-| Neon / Supabase | Managed PostgreSQL |
-| Upstash | Managed Redis |
-| Cloudinary | Image storage |
-| Stripe | Payments + vendor payouts |
-
-### Checklist
-
-- [ ] Set all production environment variables
-- [ ] Run `npx prisma migrate deploy` on production DB
-- [ ] Configure Stripe webhook endpoint to production URL
-- [ ] Enable CORS for production frontend domain
-- [ ] Set up error monitoring (e.g. Sentry)
-- [ ] Configure API rate limiting
-- [ ] Enable Stripe Connect for vendor payouts
-
----
-
-## What This Project Demonstrates
-
-**Backend (NestJS)**
-- Domain driven modular architecture
-- JWT auth with refresh token rotation
-- Complex Prisma transactions (multi-vendor order splitting)
-- Role based access control (RBAC)
-- Stripe payment integration with webhooks
-- File uploads to S3/Cloudinary
-- Swagger/OpenAPI documentation
-
-**Frontend (Next.js)**
-- App Router with server and client components
-- Multi portal UX: customer, vendor, and admin dashboards
-- Optimistic updates with TanStack Query
-- Form validation with Zod + React Hook Form
-- Stripe Elements checkout integration
-- Realtime order status updates via WebSockets
-
-**Database Design**
-- Normalized schema with proper relational integrity
-- Self referential category trees
-- Multi vendor order splitting pattern
-- Soft deletes for products
+Next.js 15 (App Router) · Tailwind CSS v4 · shadcn/ui · Zustand · TanStack Query ·
+React Hook Form + Zod · Stripe.js Elements · Recharts · Vitest + Playwright
 
 ---
 
 ## Roadmap
 
-- [ ] Realtime customer to vendor chat (Socket.IO)
-- [ ] Push notifications (Firebase FCM)
-- [ ] Delivery tracking with Google Maps API
-- [ ] Product recommendation engine by animal type
-- [ ] Vendor analytics dashboard with charts
+Ordered so that migrations with wide reach land before the client that would have to
+be rewritten around them.
+
+### Next — API structure
+- [ ] `/api/v1` global prefix (do this before any client exists)
+- [ ] Pagination and sorting on public product and vendor listings
+- [ ] Recursive category filtering, so `?categoryId=<Livestock>` includes its subtree
+- [ ] Product search across name, description and category
+
+### Then — schema with reach
+- [ ] **Per-vendor order splitting** — `Order → VendorOrder → OrderItem`. Status becomes
+      per-vendor, which touches checkout, cancellation, `GET /orders/vendor/:id` and
+      `/admin/stats`
+- [ ] **`ProductVariant`** — price and stock move down a level, which touches the cart,
+      the checkout decrement and the `OrderItem` snapshot
+- [ ] **Vendor approval** — `Vendor.status`; the `isVendor` flip moves to approval time
+      and the ownership guards start checking it
+- [ ] **`Address`** — `Order.shippingAddressId`
+- [ ] **`DeliveryZone`** — vendor-scoped
+
+### Then — infrastructure
+- [ ] Redis + BullMQ for email, order processing and payouts
+- [ ] S3 / Cloudinary uploads for vendor and product media
+- [ ] `Notification` model + Socket.IO gateway for order status
+- [ ] Stripe Connect vendor payouts
+- [ ] Batch and expiry tracking — real for food, beverages and supplements, and a
+      prerequisite for recalls
+
+### Then — client
+- [ ] npm workspaces restructure (`apps/api`, `apps/web`, `packages/*`)
+- [ ] Next.js 15 customer, vendor and admin portals
+- [ ] Stripe Elements checkout
 - [ ] Mobile app (React Native / Expo)
+
+---
+
+## Deployment
+
+| Service | Purpose |
+|---|---|
+| Neon | Managed PostgreSQL |
+| Railway / Render | NestJS API |
+| Vercel | 🚧 Next.js frontend |
+| Upstash | 🚧 Managed Redis |
+| Cloudinary | 🚧 Image storage |
+| Stripe | Payments · 🚧 Connect payouts |
+
+### Checklist
+
+- [ ] Set all production environment variables
+- [ ] `npx prisma migrate deploy` against the production database
+- [ ] Point the Stripe webhook at the production URL and set `STRIPE_WEBHOOK_SECRET`
+- [ ] Enable CORS for the production frontend origin
+- [ ] Error monitoring (Sentry)
+- [ ] Review the rate limits for production traffic
 
 ---
 
 <div align="center">
 
-Built with ❤️ for portfolio demonstration
-
-**FeedMart** connecting farmers with feed suppliers across Africa 🌍
+**Nuvita** — nutrition and wellness commerce, for every species.
 
 </div>

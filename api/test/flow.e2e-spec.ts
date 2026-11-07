@@ -70,13 +70,13 @@ describe('Marketplace flow (e2e)', () => {
     const vendor = await http()
       .post('/vendors')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: `Green Valley Feeds ${seq}` })
+      .send({ name: `Green Valley Nutrition ${seq}` })
       .expect(201);
 
     const product = await http()
       .post('/products')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Layer Feed 20kg', price, stock, vendorId: vendor.body.id })
+      .send({ name: 'Cold Pressed Ginger Shot 250ml', price, stock, vendorId: vendor.body.id })
       .expect(201);
 
     return { vendorId: vendor.body.id as string, productId: product.body.id as string };
@@ -118,7 +118,7 @@ describe('Marketplace flow (e2e)', () => {
     expect(order.body.status).toBe('PENDING');
     expect(order.body.items).toHaveLength(1);
     expect(order.body.items[0].unitPrice).toBe(4999);
-    expect(order.body.items[0].productName).toBe('Layer Feed 20kg');
+    expect(order.body.items[0].productName).toBe('Cold Pressed Ginger Shot 250ml');
 
     // stock decremented and cart emptied inside the same transaction
     const product = await prisma.product.findUnique({ where: { id: productId } });
@@ -267,7 +267,7 @@ describe('Marketplace flow (e2e)', () => {
     await http()
       .post('/products')
       .set('Authorization', `Bearer ${stranger.token}`)
-      .send({ name: 'Counterfeit Feed', price: 100, stock: 1, vendorId })
+      .send({ name: 'Counterfeit Tonic', price: 100, stock: 1, vendorId })
       .expect(403);
   });
 
@@ -314,7 +314,7 @@ describe('Marketplace flow (e2e)', () => {
     const review = await http()
       .post('/reviews')
       .set('Authorization', `Bearer ${token}`)
-      .send({ productId, rating: 5, comment: 'Birds took to it immediately.' })
+      .send({ productId, rating: 5, comment: 'Arrived cold and tasted fresh.' })
       .expect(201);
     expect(review.body.rating).toBe(5);
 

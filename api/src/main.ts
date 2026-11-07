@@ -8,8 +8,10 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   
   const config = new DocumentBuilder()
-    .setTitle('FeedVita API')
-    .setDescription('Multi vendor marketplace API connecting animal owners and farmers with feed suppliers ')
+    .setTitle('Nuvita API')
+    .setDescription('Multi vendor marketplace API for food, beverages, wellness products and ' +
+      'equipment, for people, pets and livestock'
+    )
     .setVersion('1.0')
     .addBearerAuth()
     .build();

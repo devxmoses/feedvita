@@ -18,11 +18,11 @@ describe('ReviewsService', () => {
   };
 
   const aDto = (over: Record<string, unknown> = {}) =>
-    ({ productId: 'p1', rating: 5, comment: 'Birds took to it immediately.', ...over }) as any;
+    ({ productId: 'p1', rating: 5, comment: 'Arrived cold and tasted fresh.', ...over }) as any;
 
   beforeEach(async () => {
     prisma = {
-      product: { findUnique: jest.fn().mockResolvedValue({ id: 'p1', name: 'Layer Feed' }) },
+      product: { findUnique: jest.fn().mockResolvedValue({ id: 'p1', name: 'Cold Pressed Ginger Shot' }) },
       orderItem: { findFirst: jest.fn().mockResolvedValue({ id: 'oi1' }) },
       review: {
         create: jest.fn().mockResolvedValue({ id: 'r1' }),
@@ -79,7 +79,7 @@ describe('ReviewsService', () => {
         data: {
           productId: 'p1',
           rating: 5,
-          comment: 'Birds took to it immediately.',
+          comment: 'Arrived cold and tasted fresh.',
           authorId: 'u1',
         },
       });
