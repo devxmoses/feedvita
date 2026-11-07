@@ -22,14 +22,25 @@ export class PaymentsService {
             throw new ConflictException(`Order is already ${order.status}`);
         }
 
-        const paymentIntent = await this.stripe.paymentIntents.create({
-            amount: order.total,
-            currency: 'usd',
-            metadata: { orderId: order.id},
-        });
+        // Stripe replays the original response for a repeated idempotency key rather
+        // than opening a second intent, so a buyer who reloads checkout gets the same
+        // intent back instead of two live ones they could both pay. Keys live 24h.
 
-        await this.prisma.payment.create({
-            data:{
+        const paymentIntent = await this.stripe.paymentIntents.create(
+            {
+                amount: order.total,
+                currency: 'usd',
+                metadata: { orderId: order.id},
+            },
+            {idempotencyKey:`order-intent-${order.id}`},
+        );
+        // upsert, not create: on a replayed intent the row already exists, and if an
+        // earlier attempt opened the intent but died before writing the row, this call
+        // heals it. Either way we end up with exactly one row per intent.
+        await this.prisma.payment.upsert({
+            where:{ stripePaymentIntentId: paymentIntent.id},
+            update:{},
+            create:{
                 orderId: order.id,
                 stripePaymentIntentId: paymentIntent.id,
                 amount:order.total,
@@ -56,21 +67,42 @@ export class PaymentsService {
             case 'payment_intent.succeeded':{
                 const intent = event.data.object as Stripe.PaymentIntent;
                 await this.prisma.$transaction(async(tx)=>{
-                    const payment = await tx.payment.update({
+                    const payment = await tx.payment.findUnique({
                         where:{stripePaymentIntentId:intent.id},
+                        include:{order:true},
+                    });
+                     // An intent we have no row for is nothing we can act on. Returning
+                    // quietly acknowledges the event; throwing would make Stripe retry
+                    // the same dead event with backoff for about three days.
+                    if(!payment) return;
+
+                    await tx.payment.update({
+                        where:{id: payment.id},
                         data:{status:'SUCCEEDED'}
                     });
-                    await tx.order.update({
-                        where:{id:payment.orderId},
-                        data:{status:'PAID'},
-                    })
+
+
+                    // Only a still-pending order may become PAID. If the buyer cancelled
+                    // while the charge was in flight, cancel() has already restocked the
+                    // items, so flipping to PAID here would sell stock we no longer hold.
+                    // Record the payment and leave the order cancelled; the money has to
+                    // be refunded out of band.
+                    if(payment.order.status === 'PENDING'){
+                        await tx.order.update({
+                            where:{id:payment.orderId},
+                            data:{status:'PAID'},
+                        });
+                    }
                 });
                 break;
             }
 
             case 'payment_intent.payment_failed':{
                 const intent = event.data.object as Stripe.PaymentIntent;
-                await this.prisma.payment.update({
+                // updateMany matches zero rows without throwing, so an unknown
+                // intent is acknowledged instead of triggering Stripe retries.
+              
+                await this.prisma.payment.updateMany({
                     where:{ stripePaymentIntentId: intent.id},
                     data:{status:'FAILED'},
                 });

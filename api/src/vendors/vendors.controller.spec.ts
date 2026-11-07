@@ -3,37 +3,31 @@ import { VendorsController } from './vendors.controller';
 import { VendorsService } from './vendors.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+const asRequest = (id: string) => ({ user: { id } }) as any;
+
 describe('VendorsController', () => {
   let controller: VendorsController;
+  let service: { create: jest.Mock };
 
   beforeEach(async () => {
+    service = { create: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
       controllers: [VendorsController],
       providers: [
-        VendorsService,
-          {
-            provide:PrismaService,
-            useValue:{
-              vendor:{
-                create: jest.fn(),
-                findMany: jest.fn(),
-                findUnique: jest.fn(),
-                update: jest.fn(),
-                delete: jest.fn(),
-              },
-              user:{
-                update: jest.fn(),
-              },
-              $transaction: jest.fn((cb)=>cb({}))
-            }
-          }
+        { provide: VendorsService, useValue: service },
+        { provide: PrismaService, useValue: {} },
       ],
     }).compile();
-
-    controller = module.get<VendorsController>(VendorsController);
+    controller = module.get(VendorsController);
   });
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined();
+  afterEach(() => jest.clearAllMocks());
+
+  it('makes the authenticated user the owner of a new vendor', async () => {
+    const dto = { name: 'Green Valley Feeds' } as any;
+
+    await controller.create(asRequest('user-1'), dto);
+
+    expect(service.create).toHaveBeenCalledWith('user-1', dto);
   });
 });

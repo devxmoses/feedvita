@@ -9,6 +9,6 @@ export class SelfOrAdminGuard implements CanActivate{
         if(user.isAdmin) return true;
         if(user.id === params.id) return true;
 
-        throw new ForbiddenException ('You can only modify your own account');
+        throw new ForbiddenException ('You can only access your own account');
     }
 }

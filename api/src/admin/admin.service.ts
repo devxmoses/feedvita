@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrderStatus } from '../../generated/prisma/enums'
-import { Order } from '../orders/entities/order.entity';
 
 const COLLECTED_STATUS: OrderStatus[] = [
     OrderStatus.PAID,
@@ -18,8 +17,8 @@ export class AdminService {
             const users = await tx.user.count();
             const vendors = await tx.vendor.count();
             const products = await tx.product.count();
-            const orders = this.prisma.order.count();
-            const reviews = this.prisma.review.count();
+            const orders = await tx.order.count();
+            const reviews = await tx.review.count();
 
             const ordersByStatus = await tx.order.groupBy({
                 by:['status'],
@@ -44,7 +43,7 @@ export class AdminService {
                 totals: {users, vendors, products, orders, reviews},
                 ordersByStatus: Object.fromEntries(
                     ordersByStatus.map((row)=>[row.status, row._count._all]),
-                ),
+                ), //.map produces [['DELIVERED', 3], ['PENDING', 5]], Object.fromEntries produces { DELIVERED: 3, PENDING: 5 }
                 revenue:{
                     collected: revenue._sum.total ?? 0,
                     currency:'usd',

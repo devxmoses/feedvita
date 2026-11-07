@@ -27,7 +27,7 @@ export class ProductsController {
   @ApiQuery({ name: 'categoryId', required: false })
   @ApiResponse({ status: 200, description: 'List of products' })
   @Get()
-  findAll(@Query('vendorId') vendorId:string, @Query('categoryId') categoryId?:string) {
+  findAll(@Query('vendorId') vendorId?:string, @Query('categoryId') categoryId?:string) {
     return this.productsService.findAll(vendorId, categoryId);
   }
 
