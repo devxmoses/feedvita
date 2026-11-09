@@ -403,4 +403,138 @@ describe('Marketplace flow (e2e)', () => {
     expect(res.body.status).toBe('ok');
   });
 
+    describe('product listing pagination', () => {
+    // three products from one vendor, with known prices so sort order is checkable
+    const seedCatalogue = async () => {
+      const { token } = await seedUser();
+      const vendor = await http()
+        .post('/api/v1/vendors')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: `Green Valley Nutrition ${(seq += 1)}` })
+        .expect(201);
+
+      for (const [name, price] of [
+        ['Layer Mash 25kg', 1500],
+        ['Cold Pressed Ginger Shot 250ml', 4999],
+        ['Omega Oil for Dogs 500ml', 3200],
+      ] as [string, number][]) {
+        await http()
+          .post('/api/v1/products')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name, price, stock: 5, vendorId: vendor.body.id })
+          .expect(201);
+      }
+
+      return { token, vendorId: vendor.body.id };
+    };
+
+    it('wraps the rows in data with pagination meta', async () => {
+      await seedCatalogue();
+
+      const res = await http().get('/api/v1/products').expect(200);
+
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data).toHaveLength(3);
+      expect(res.body.meta).toEqual({ total: 3, page: 1, limit: 20, pageCount: 1 });
+    });
+
+    it('serves one page at a time and reports how many there are', async () => {
+      await seedCatalogue();
+
+      const first = await http().get('/api/v1/products?page=1&limit=2').expect(200);
+      expect(first.body.data).toHaveLength(2);
+      expect(first.body.meta).toEqual({ total: 3, page: 1, limit: 2, pageCount: 2 });
+
+      const second = await http().get('/api/v1/products?page=2&limit=2').expect(200);
+      expect(second.body.data).toHaveLength(1);
+      expect(second.body.meta.page).toBe(2);
+
+      // no row appears on both pages
+      const ids = [...first.body.data, ...second.body.data].map((p: any) => p.id);
+      expect(new Set(ids).size).toBe(3);
+    });
+
+    it('returns an empty page past the end rather than an error', async () => {
+      await seedCatalogue();
+
+      const res = await http().get('/api/v1/products?page=99&limit=2').expect(200);
+
+      expect(res.body.data).toEqual([]);
+      expect(res.body.meta.total).toBe(3);
+    });
+
+    it('sorts by price in both directions', async () => {
+      await seedCatalogue();
+
+      const asc = await http().get('/api/v1/products?sortBy=price&order=asc').expect(200);
+      expect(asc.body.data.map((p: any) => p.price)).toEqual([1500, 3200, 4999]);
+
+      const desc = await http().get('/api/v1/products?sortBy=price&order=desc').expect(200);
+      expect(desc.body.data.map((p: any) => p.price)).toEqual([4999, 3200, 1500]);
+    });
+
+    it('still honours the vendor filter, and counts only that vendor', async () => {
+      const mine = await seedCatalogue();
+      await seedCatalogue(); // a second vendor's products must not be counted
+
+      const res = await http()
+        .get(`/api/v1/products?vendorId=${mine.vendorId}`)
+        .expect(200);
+
+      expect(res.body.meta.total).toBe(3);
+      expect(res.body.data.every((p: any) => p.vendorId === mine.vendorId)).toBe(true);
+    });
+
+    it('caps limit so one request cannot ask for the whole table', async () => {
+      await http().get('/api/v1/products?limit=10000').expect(400);
+    });
+
+    it('rejects a page or limit that is not a positive integer', async () => {
+      await http().get('/api/v1/products?page=0').expect(400);
+      await http().get('/api/v1/products?page=-1').expect(400);
+      await http().get('/api/v1/products?page=abc').expect(400);
+      await http().get('/api/v1/products?limit=1.5').expect(400);
+    });
+
+    it('refuses to sort by a column that is not on the allowlist', async () => {
+      await http().get('/api/v1/products?sortBy=vendorId').expect(400);
+      await http().get('/api/v1/products?order=sideways').expect(400);
+    });
+
+    it('ignores an unknown query parameter instead of failing', async () => {
+      await seedCatalogue();
+
+      const res = await http().get('/api/v1/products?nonsense=1').expect(200);
+
+      expect(res.body.data).toHaveLength(3);
+    });
+  });
+
+  describe('vendor listing pagination', () => {
+    it('paginates and sorts vendors by name', async () => {
+      const { token } = await seedUser();
+      for (const name of ['Zebra Feeds', 'Alpha Wellness', 'Mid Valley Produce']) {
+        await http()
+          .post('/api/v1/vendors')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name })
+          .expect(201);
+      }
+
+      const res = await http().get('/api/v1/vendors?sortBy=name&order=asc&limit=2').expect(200);
+
+      expect(res.body.data.map((v: any) => v.name)).toEqual([
+        'Alpha Wellness',
+        'Mid Valley Produce',
+      ]);
+      expect(res.body.meta).toEqual({ total: 3, page: 1, limit: 2, pageCount: 2 });
+    });
+
+    it('applies the same validation to the vendor listing', async () => {
+      await http().get('/api/v1/vendors?limit=10000').expect(400);
+      await http().get('/api/v1/vendors?sortBy=ownerId').expect(400);
+    });
+  });
+
+
 });

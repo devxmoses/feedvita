@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { VendorsService } from './vendors.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FindVendorsQueryDto } from './dto/find-vendors-query.dto';
 
 describe('VendorsService', () => {
   let service: VendorsService;
@@ -19,12 +20,16 @@ describe('VendorsService', () => {
     // writes through the transaction, and touching this.prisma instead would
     // throw here rather than quietly escape the transaction.
     prisma = {
-      $transaction: jest.fn((cb: any) => cb(tx)),
+        // create() passes a callback; findAll() passes an array of operations
+      $transaction: jest.fn((arg: any) =>
+        typeof arg === 'function' ? arg(tx) : Promise.all(arg),
+      ),
       vendor: {
         findMany: jest.fn().mockResolvedValue([VENDOR]),
         findUnique: jest.fn().mockResolvedValue(VENDOR),
         update: jest.fn().mockResolvedValue(VENDOR),
         delete: jest.fn().mockResolvedValue(VENDOR),
+        count: jest.fn().mockResolvedValue(1),
       },
     };
 
@@ -91,11 +96,43 @@ describe('VendorsService', () => {
     });
   });
 
-  describe('findAll', () => {
-    it('lists vendors', async () => {
-      await expect(service.findAll()).resolves.toEqual([VENDOR]);
+    describe('findAll', () => {
+    const query = (over: Partial<FindVendorsQueryDto> = {}) =>
+      ({ page: 1, limit: 20, sortBy: 'createdAt', order: 'desc', ...over }) as FindVendorsQueryDto;
+
+    it('returns the rows under data with pagination meta', async () => {
+      prisma.vendor.count.mockResolvedValue(3);
+
+      const result = await service.findAll(query());
+
+      expect(result.data).toEqual([VENDOR]);
+      expect(result.meta).toEqual({ total: 3, page: 1, limit: 20, pageCount: 1 });
+    });
+
+    it('translates page and limit into skip and take', async () => {
+      await service.findAll(query({ page: 4, limit: 5 }));
+
+      expect(prisma.vendor.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 15, take: 5 }),
+      );
+    });
+
+    it('sorts by the requested field and direction', async () => {
+      await service.findAll(query({ sortBy: 'name', order: 'asc' }));
+
+      expect(prisma.vendor.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { name: 'asc' } }),
+      );
+    });
+
+    it('runs the page and the count in one transaction', async () => {
+      await service.findAll(query());
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2);
     });
   });
+
 
   describe('update', () => {
     it('checks the vendor exists first', async () => {

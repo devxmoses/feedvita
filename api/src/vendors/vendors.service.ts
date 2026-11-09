@@ -3,6 +3,9 @@ import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { slugify } from '../common/utils/slugify';
+import { FindVendorsQueryDto } from './dto/find-vendors-query.dto';
+import { paginate } from '../common/dto/paginated';
+
 
 @Injectable()
 export class VendorsService {
@@ -30,8 +33,19 @@ export class VendorsService {
     
   }
 
-  findAll() {
-    return this.prisma.vendor.findMany();
+  async findAll(query:FindVendorsQueryDto) {
+    const { page, limit, sortBy, order } = query;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.vendor.findMany({
+        orderBy:{[sortBy]:order},
+        skip:(page-1)*limit,
+        take:limit,
+      }),
+      this.prisma.vendor.count(),
+    ]);
+
+    return paginate (data, total, page,limit);
   }
 
   async findOne(id: string) {

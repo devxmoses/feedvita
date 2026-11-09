@@ -3,6 +3,8 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { slugify } from '../common/utils/slugify';
 import { PrismaService } from '../prisma/prisma.service';
+import { FindProductsQueryDto } from './dto/find-products-query.dto';
+import { paginate } from '../common/dto/paginated';
 
 @Injectable()
 export class ProductsService {
@@ -32,13 +34,24 @@ export class ProductsService {
   }
 
 
-  findAll(vendorId?:string, categoryId?:string){
-    return this.prisma.product.findMany({
-      where:{
-        ...(vendorId?{vendorId}:{}),
-        ...(categoryId ? {categoryId} : {})
-      }
-    });
+  async findAll(query:FindProductsQueryDto){
+    const {page, limit, sortBy, order, vendorId, categoryId} = query;
+    const where = {
+      ...(vendorId?{vendorId}:{}),
+      ...(categoryId ? {categoryId} : {})
+    }
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where,
+        orderBy:{[sortBy]:order},
+        skip:(page-1)*limit,
+        take:limit,
+      }),
+      this.prisma.product.count({where}),
+    ]);
+
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id:string){

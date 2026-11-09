@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FindProductsQueryDto } from './dto/find-products-query.dto';
 
 describe('ProductsService', () => {
   let service: ProductsService;
@@ -21,8 +22,12 @@ describe('ProductsService', () => {
         findUnique: jest.fn().mockResolvedValue(PRODUCT),
         update: jest.fn().mockResolvedValue(PRODUCT),
         delete: jest.fn().mockResolvedValue(PRODUCT),
+        count: jest.fn().mockResolvedValue(1),
       },
       category: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'Beverages' }) },
+      // the array form of $transaction: Prisma runs the operations it is handed
+      // in one transaction, so the page and the count see the same snapshot
+      $transaction: jest.fn((ops: any[]) => Promise.all(ops)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -83,31 +88,97 @@ describe('ProductsService', () => {
     });
   });
 
-  describe('findAll', () => {
-    it('filters by vendor', async () => {
-      await service.findAll('v1');
+   describe('findAll', () => {
+    // what the ValidationPipe hands the service once defaults have been applied
+    const query = (over: Partial<FindProductsQueryDto> = {}) =>
+      ({ page: 1, limit: 20, sortBy: 'createdAt', order: 'desc', ...over }) as FindProductsQueryDto;
 
-      expect(prisma.product.findMany).toHaveBeenCalledWith({ where: { vendorId: 'v1' } });
+    it('filters by vendor', async () => {
+      await service.findAll(query({ vendorId: 'v1' }));
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { vendorId: 'v1' } }),
+      );
     });
 
     it('filters by category', async () => {
-      await service.findAll(undefined, 'c1');
+      await service.findAll(query({ categoryId: 'c1' }));
 
-      expect(prisma.product.findMany).toHaveBeenCalledWith({ where: { categoryId: 'c1' } });
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { categoryId: 'c1' } }),
+      );
     });
 
     it('filters by both at once', async () => {
-      await service.findAll('v1', 'c1');
+      await service.findAll(query({ vendorId: 'v1', categoryId: 'c1' }));
 
-      expect(prisma.product.findMany).toHaveBeenCalledWith({
-        where: { vendorId: 'v1', categoryId: 'c1' },
-      });
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { vendorId: 'v1', categoryId: 'c1' } }),
+      );
     });
 
     it('applies no filter when neither is given', async () => {
-      await service.findAll();
+      await service.findAll(query());
 
-      expect(prisma.product.findMany).toHaveBeenCalledWith({ where: {} });
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} }),
+      );
+    });
+
+    it('counts against the same filter as the page', async () => {
+      await service.findAll(query({ vendorId: 'v1' }));
+
+      expect(prisma.product.count).toHaveBeenCalledWith({ where: { vendorId: 'v1' } });
+    });
+
+    it('translates page and limit into skip and take', async () => {
+      await service.findAll(query({ page: 3, limit: 10 }));
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 10 }),
+      );
+    });
+
+    it('asks for the first page with no offset', async () => {
+      await service.findAll(query({ page: 1, limit: 25 }));
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 25 }),
+      );
+    });
+
+    it('sorts by the requested field and direction', async () => {
+      await service.findAll(query({ sortBy: 'price', order: 'asc' }));
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { price: 'asc' } }),
+      );
+    });
+
+    it('runs the page and the count in one transaction', async () => {
+      await service.findAll(query());
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2);
+    });
+
+    it('returns the rows under data with pagination meta', async () => {
+      prisma.product.count.mockResolvedValue(47);
+
+      const result = await service.findAll(query({ page: 2, limit: 20 }));
+
+      expect(result.data).toEqual([PRODUCT]);
+      expect(result.meta).toEqual({ total: 47, page: 2, limit: 20, pageCount: 3 });
+    });
+
+    it('reports a pageCount of 0 for an empty result set', async () => {
+      prisma.product.findMany.mockResolvedValue([]);
+      prisma.product.count.mockResolvedValue(0);
+
+      const result = await service.findAll(query());
+
+      expect(result.data).toEqual([]);
+      expect(result.meta.pageCount).toBe(0);
     });
   });
 

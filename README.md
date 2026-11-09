@@ -53,8 +53,9 @@ per-vendor fulfilment are next.
 | Category tree, reviews gated on delivered purchase | ✅ built |
 | Admin analytics | ✅ built |
 | Rate limiting, global exception mapping, OpenAPI docs | ✅ built |
-| Test suite — 201 unit, 31 end-to-end | ✅ built |
+| Test suite — 211 unit, 42 end-to-end | ✅ built |
 | `/api/v1` global prefix, `/health` excluded | ✅ built |
+| Pagination, sorting and filtering on public listings | ✅ built |
 | Per-vendor order splitting (`VendorOrder`) | 🚧 planned |
 | `ProductVariant`, `Address`, `DeliveryZone`, `Notification` | 🚧 planned |
 | Vendor approval flow | 🚧 planned |
@@ -232,16 +233,41 @@ checks expect it. Interactive docs are at `/api/docs`, also unprefixed.
 | Method | Endpoint | Access |
 |---|---|---|
 | `POST` | `/vendors` | authenticated |
-| `GET` | `/vendors`, `/vendors/:id` | public |
+| `GET` | `/vendors` | public, paginated |
+| `GET` | `/vendors/:id` | public |
 | `PATCH` · `DELETE` | `/vendors/:id` | vendor owner or admin |
 
 ### Products
 | Method | Endpoint | Access |
 |---|---|---|
 | `POST` | `/products` | owner of the target vendor |
-| `GET` | `/products?vendorId=&categoryId=` | public |
+| `GET` | `/products` | public, paginated and filterable |
 | `GET` | `/products/:id` | public |
 | `PATCH` · `DELETE` | `/products/:id` | product's vendor owner or admin |
+
+#### Paginated listings
+
+`GET /products` and `GET /vendors` return a page, not a bare array:
+
+```json
+{
+  "data": [ { "id": "...", "name": "Cold Pressed Ginger Shot 250ml", "price": 4999 } ],
+  "meta": { "total": 47, "page": 2, "limit": 20, "pageCount": 3 }
+}
+```
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `page` | `1` | 1-based; a page past the end returns an empty `data` |
+| `limit` | `20` | capped at `100`, so no request can pull the whole table |
+| `sortBy` | `createdAt` | products: `createdAt`, `price`, `name`, `stock` · vendors: `createdAt`, `name` |
+| `order` | `desc` | `asc` or `desc` |
+| `vendorId`, `categoryId` | — | products only; the `total` reflects the filter |
+
+Anything outside those bounds is a `400` before the query is built — `?limit=10000`,
+`?page=0` and `?sortBy=passwordHash` are all rejected. Unknown parameters are stripped
+and ignored. The page and its `total` are read in one transaction, so they never
+disagree.
 
 ### Categories
 | Method | Endpoint | Access |
@@ -375,7 +401,7 @@ PORT=3000
 
 ```bash
 npx tsc --noEmit        # type check first - it catches what Jest cannot
-npm test                # 201 unit tests
+npm test                # 211 unit tests
 
 npm run test:e2e:up     # start the throwaway Postgres container
 npm run test:e2e        # 31 tests against a real database
@@ -427,7 +453,6 @@ Ordered so that migrations with wide reach land before the client that would hav
 be rewritten around them.
 
 ### Next — API structure
-- [ ] Pagination and sorting on public product and vendor listings
 - [ ] Recursive category filtering, so `?categoryId=<Livestock>` includes its subtree
 - [ ] Product search across name, description and category
 
