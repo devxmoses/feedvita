@@ -54,7 +54,7 @@ per-vendor fulfilment are next.
 | Admin analytics | ✅ built |
 | Rate limiting, global exception mapping, OpenAPI docs | ✅ built |
 | Test suite — 201 unit, 31 end-to-end | ✅ built |
-| `/api/v1` global prefix | 🚧 planned |
+| `/api/v1` global prefix, `/health` excluded | ✅ built |
 | Per-vendor order splitting (`VendorOrder`) | 🚧 planned |
 | `ProductVariant`, `Address`, `DeliveryZone`, `Notification` | 🚧 planned |
 | Vendor approval flow | 🚧 planned |
@@ -114,6 +114,8 @@ moment an admin approves.
 - ✅ **JWT refresh rotation** — 15m access tokens, SHA-256-hashed 7d refresh tokens
 - ✅ **Atomic checkout** — stock decrement, order creation and cart clearing in one `$transaction`
 - ✅ **Centralised Prisma error mapping** — `P2002` → 409, `P2025` → 404, `P2003` → 400
+- ✅ **One app-configuration function** — `src/app.setup.ts` is called by both `main.ts`
+  and the e2e suite, so the tested app cannot drift from the real one
 - 🚧 **Monorepo** via npm workspaces (`apps/api`, `apps/web`, `packages/*`)
 - 🚧 **Order splitting** — cart grouped by vendor into `VendorOrder` rows in one transaction
 - 🚧 **BullMQ queues** for email, order processing and payouts
@@ -207,7 +209,10 @@ triggering three days of retries — and refuses to mark a cancelled order paid.
 
 ## API reference
 
-No global prefix yet (`/api/v1` is 🚧). Interactive docs at `/api/docs`.
+Every endpoint below is served under **`/api/v1`** — so `/auth/login` is really
+`POST /api/v1/auth/login`. The paths are written relative to that prefix for
+readability. `GET /health` is the one exception and stays at the root, where uptime
+checks expect it. Interactive docs are at `/api/docs`, also unprefixed.
 
 ### Auth
 | Method | Endpoint | Access | Notes |
@@ -291,6 +296,7 @@ nuvita/
 ├── api/                           # NestJS API
 │   ├── src/
 │   │   ├── main.ts
+│   │   ├── app.setup.ts           # shared by main.ts and the e2e suite
 │   │   ├── app.module.ts
 │   │   ├── common/
 │   │   │   ├── filters/           # global Prisma → HTTP mapping
@@ -339,8 +345,15 @@ npx prisma generate
 npm run start:dev
 ```
 
-> API → `http://localhost:3000`
+> API → `http://localhost:3000/api/v1`
 > Swagger → `http://localhost:3000/api/docs`
+> Health → `http://localhost:3000/health`
+
+If you forward Stripe webhooks locally, the path is prefixed too:
+
+```bash
+stripe listen --forward-to localhost:3000/api/v1/payments/webhook
+```
 
 ### Environment
 
@@ -414,7 +427,6 @@ Ordered so that migrations with wide reach land before the client that would hav
 be rewritten around them.
 
 ### Next — API structure
-- [ ] `/api/v1` global prefix (do this before any client exists)
 - [ ] Pagination and sorting on public product and vendor listings
 - [ ] Recursive category filtering, so `?categoryId=<Livestock>` includes its subtree
 - [ ] Product search across name, description and category

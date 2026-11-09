@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import request from 'supertest';
+import { INestApplication} from '@nestjs/common';
+import request from 'supertest'
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { configureApp } from '../src/app.setup';
 
 describe('Marketplace flow (e2e)', () => {
   let app: INestApplication;
@@ -19,8 +20,7 @@ describe('Marketplace flow (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    // mirror main.ts so validation behaves exactly as it does in production
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    configureApp(app);
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -68,13 +68,13 @@ describe('Marketplace flow (e2e)', () => {
 
   const listProduct = async (token: string, stock = 10, price = 4999) => {
     const vendor = await http()
-      .post('/vendors')
+      .post('/api/v1/vendors')
       .set('Authorization', `Bearer ${token}`)
       .send({ name: `Green Valley Nutrition ${seq}` })
       .expect(201);
 
     const product = await http()
-      .post('/products')
+      .post('/api/v1/products')
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Cold Pressed Ginger Shot 250ml', price, stock, vendorId: vendor.body.id })
       .expect(201);
@@ -84,14 +84,14 @@ describe('Marketplace flow (e2e)', () => {
 
   const addToCart = (token: string, productId: string, quantity: number) =>
     http()
-      .post('/cart/items')
+      .post('/api/v1/cart/items')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId, quantity })
       .expect(201);
 
   it('registers a user over HTTP and returns a usable token pair', async () => {
     const res = await http()
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({ email: 'registered@test.com', password: 'password123', name: 'Registered' })
       .expect(201);
 
@@ -99,7 +99,7 @@ describe('Marketplace flow (e2e)', () => {
     expect(res.body.refresh_token).toBeDefined();
 
     // the issued token actually authenticates against a protected route
-    await http().get('/cart').set('Authorization', `Bearer ${res.body.access_token}`).expect(200);
+    await http().get('/api/v1/cart').set('Authorization', `Bearer ${res.body.access_token}`).expect(200);
   });
 
   it('runs vendor -> product -> cart -> checkout end to end', async () => {
@@ -108,11 +108,11 @@ describe('Marketplace flow (e2e)', () => {
 
     await addToCart(token, productId, 2);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items).toHaveLength(1);
     expect(cart.body.items[0].quantity).toBe(2);
 
-    const order = await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(201);
+    const order = await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(201);
 
     expect(order.body.total).toBe(9998);
     expect(order.body.status).toBe('PENDING');
@@ -124,7 +124,7 @@ describe('Marketplace flow (e2e)', () => {
     const product = await prisma.product.findUnique({ where: { id: productId } });
     expect(product!.stock).toBe(8);
 
-    const emptied = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const emptied = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(emptied.body.items).toHaveLength(0);
   });
 
@@ -135,12 +135,12 @@ describe('Marketplace flow (e2e)', () => {
     await addToCart(token, productId, 2);
 
     await http()
-      .patch(`/cart/items/${productId}`)
+      .patch(`/api/v1/cart/items/${productId}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ quantity: 5 })
       .expect(200);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items[0].quantity).toBe(5);
   });
 
@@ -151,11 +151,11 @@ describe('Marketplace flow (e2e)', () => {
     await addToCart(token, productId, 1);
 
     await http()
-      .delete(`/cart/items/${productId}`)
+      .delete(`/api/v1/cart/items/${productId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items).toHaveLength(0);
   });
 
@@ -165,9 +165,9 @@ describe('Marketplace flow (e2e)', () => {
 
     await addToCart(token, productId, 2);
 
-    await http().delete('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    await http().delete('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items).toHaveLength(0);
   });
 
@@ -178,7 +178,7 @@ describe('Marketplace flow (e2e)', () => {
     await addToCart(token, productId, 2);
     await addToCart(token, productId, 3);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items).toHaveLength(1);
     expect(cart.body.items[0].quantity).toBe(5);
   });
@@ -186,7 +186,7 @@ describe('Marketplace flow (e2e)', () => {
   it('refuses checkout on an empty cart', async () => {
     const { token } = await seedUser();
 
-    await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(400);
+    await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(400);
   });
 
   it('refuses checkout when stock is short, leaving stock untouched', async () => {
@@ -195,7 +195,7 @@ describe('Marketplace flow (e2e)', () => {
 
     await addToCart(token, productId, 5);
 
-    await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(409);
+    await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(409);
 
     const product = await prisma.product.findUnique({ where: { id: productId } });
     expect(product!.stock).toBe(1);
@@ -206,13 +206,13 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(token, 10);
 
     await addToCart(token, productId, 3);
-    const order = await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(201);
+    const order = await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(201);
 
     const afterCheckout = await prisma.product.findUnique({ where: { id: productId } });
     expect(afterCheckout!.stock).toBe(7);
 
     const cancelled = await http()
-      .patch(`/orders/${order.body.id}/cancel`)
+      .patch(`/api/v1/orders/${order.body.id}/cancel`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(cancelled.body.status).toBe('CANCELLED');
@@ -226,12 +226,12 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(token);
 
     await addToCart(token, productId, 1);
-    const order = await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(201);
+    const order = await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(201);
 
     await prisma.order.update({ where: { id: order.body.id }, data: { status: 'SHIPPED' } });
 
     await http()
-      .patch(`/orders/${order.body.id}/cancel`)
+      .patch(`/api/v1/orders/${order.body.id}/cancel`)
       .set('Authorization', `Bearer ${token}`)
       .expect(409);
   });
@@ -241,19 +241,19 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(owner.token);
     await addToCart(owner.token, productId, 1);
     const order = await http()
-      .post('/orders')
+      .post('/api/v1/orders')
       .set('Authorization', `Bearer ${owner.token}`)
       .expect(201);
 
     const stranger = await seedUser();
 
     await http()
-      .get(`/orders/${order.body.id}`)
+      .get(`/api/v1/orders/${order.body.id}`)
       .set('Authorization', `Bearer ${stranger.token}`)
       .expect(403);
 
     await http()
-      .patch(`/orders/${order.body.id}/cancel`)
+      .patch(`/api/v1/orders/${order.body.id}/cancel`)
       .set('Authorization', `Bearer ${stranger.token}`)
       .expect(403);
   });
@@ -265,7 +265,7 @@ describe('Marketplace flow (e2e)', () => {
     const stranger = await seedUser();
 
     await http()
-      .post('/products')
+      .post('/api/v1/products')
       .set('Authorization', `Bearer ${stranger.token}`)
       .send({ name: 'Counterfeit Tonic', price: 100, stock: 1, vendorId })
       .expect(403);
@@ -275,10 +275,10 @@ describe('Marketplace flow (e2e)', () => {
     const owner = await seedUser();
     const { vendorId, productId } = await listProduct(owner.token);
     await addToCart(owner.token, productId, 2);
-    await http().post('/orders').set('Authorization', `Bearer ${owner.token}`).expect(201);
+    await http().post('/api/v1/orders').set('Authorization', `Bearer ${owner.token}`).expect(201);
 
     const mine = await http()
-      .get(`/orders/vendor/${vendorId}`)
+      .get(`/api/v1/orders/vendor/${vendorId}`)
       .set('Authorization', `Bearer ${owner.token}`)
       .expect(200);
     expect(mine.body).toHaveLength(1);
@@ -286,7 +286,7 @@ describe('Marketplace flow (e2e)', () => {
 
     const stranger = await seedUser();
     await http()
-      .get(`/orders/vendor/${vendorId}`)
+      .get(`/api/v1/orders/vendor/${vendorId}`)
       .set('Authorization', `Bearer ${stranger.token}`)
       .expect(403);
   });
@@ -296,7 +296,7 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(token);
 
     await http()
-      .post('/reviews')
+      .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId, rating: 5, comment: 'Great' })
       .expect(403);
@@ -307,12 +307,12 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(token);
 
     await addToCart(token, productId, 1);
-    const order = await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(201);
+    const order = await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(201);
 
     await prisma.order.update({ where: { id: order.body.id }, data: { status: 'DELIVERED' } });
 
     const review = await http()
-      .post('/reviews')
+      .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId, rating: 5, comment: 'Arrived cold and tasted fresh.' })
       .expect(201);
@@ -320,7 +320,7 @@ describe('Marketplace flow (e2e)', () => {
 
     // the one-review-per-product rule is enforced by the database unique constraint
     await http()
-      .post('/reviews')
+      .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId, rating: 4 })
       .expect(409);
@@ -329,29 +329,29 @@ describe('Marketplace flow (e2e)', () => {
   it('keeps admin-only routes closed to ordinary users', async () => {
     const { token } = await seedUser();
 
-    await http().get('/admin/stats').set('Authorization', `Bearer ${token}`).expect(403);
+    await http().get('/api/v1/admin/stats').set('Authorization', `Bearer ${token}`).expect(403);
   });
 
   it('serves admin stats to an admin', async () => {
     const { token } = await seedUser({ isAdmin: true });
 
-    const res = await http().get('/admin/stats').set('Authorization', `Bearer ${token}`).expect(200);
+    const res = await http().get('/api/v1/admin/stats').set('Authorization', `Bearer ${token}`).expect(200);
 
     expect(typeof res.body.totals.users).toBe('number');
     expect(res.body.revenue).toHaveProperty('collected');
   });
 
   it('requires authentication on protected routes', async () => {
-    await http().get('/cart').expect(401);
-    await http().post('/orders').expect(401);
-    await http().get('/admin/stats').expect(401);
+    await http().get('/api/v1/cart').expect(401);
+    await http().post('/api/v1/orders').expect(401);
+    await http().get('/api/v1/admin/stats').expect(401);
   });
 
   it('rejects an invalid payload before it reaches the service', async () => {
     const { token } = await seedUser();
 
     await http()
-      .post('/cart/items')
+      .post('/api/v1/cart/items')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId: 'p1', quantity: 0 })
       .expect(400);
@@ -360,7 +360,7 @@ describe('Marketplace flow (e2e)', () => {
     it('does not hand out a user record to an anonymous caller', async () => {
     const { user } = await seedUser();
 
-    await http().get(`/users/${user.id}`).expect(401);
+    await http().get(`/api/v1/users/${user.id}`).expect(401);
   });
 
   it("does not let one user read another user's account", async () => {
@@ -368,7 +368,7 @@ describe('Marketplace flow (e2e)', () => {
     const stranger = await seedUser();
 
     await http()
-      .get(`/users/${victim.user.id}`)
+      .get(`/api/v1/users/${victim.user.id}`)
       .set('Authorization', `Bearer ${stranger.token}`)
       .expect(403);
   });
@@ -377,7 +377,7 @@ describe('Marketplace flow (e2e)', () => {
     const me = await seedUser();
 
     const res = await http()
-      .get(`/users/${me.user.id}`)
+      .get(`/api/v1/users/${me.user.id}`)
       .set('Authorization', `Bearer ${me.token}`)
       .expect(200);
 
@@ -390,7 +390,7 @@ describe('Marketplace flow (e2e)', () => {
     const admin = await seedUser({ isAdmin: true });
 
     const res = await http()
-      .get(`/users/${victim.user.id}`)
+      .get(`/api/v1/users/${victim.user.id}`)
       .set('Authorization', `Bearer ${admin.token}`)
       .expect(200);
 
