@@ -1,10 +1,11 @@
-import {Request, Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import {Request, Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { VendorsService } from './vendors.service';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { VendorOwnerOrAdminGuard } from './guards/vendor-owner-or-admin.guard';
+import { FindVendorsQueryDto } from './dto/find-vendors-query.dto';
 
 @ApiTags('vendors')
 @Controller('vendors')
@@ -21,11 +22,11 @@ export class VendorsController {
     return this.vendorsService.create(req.user.id,createVendorDto);
   }
 
-  @ApiOperation({ summary: 'List all vendors' })
-  @ApiResponse({ status: 200, description: 'List of vendors' })
+  @ApiOperation({ summary: 'List vendors, paginated' })
+  @ApiResponse({ status: 200, description: 'A page of vendors plus pagination meta' })
   @Get()
-  findAll() {
-    return this.vendorsService.findAll();
+  findAll(@Query() query:FindVendorsQueryDto) {
+    return this.vendorsService.findAll(query);
   }
 
   @ApiOperation({ summary: 'Get a single vendor by ID' })

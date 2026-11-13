@@ -1,11 +1,12 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam} from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { VendorOwnerToProductGuard } from './guards/vendor-owner.-to-product.guard';
 import { ProductOwnerOrAdminGuard } from './guards/product-owner-or-admin.guard';
+import { FindProductsQueryDto } from './dto/find-products-query.dto';
 
 @ApiTags('products')
 @Controller('products')
@@ -22,13 +23,11 @@ export class ProductsController {
     return this.productsService.create(createProductDto);
   }
 
-  @ApiOperation({ summary: 'List products, optionally filtered by vendor or category' })
-  @ApiQuery({ name: 'vendorId', required: false})
-  @ApiQuery({ name: 'categoryId', required: false })
-  @ApiResponse({ status: 200, description: 'List of products' })
+  @ApiOperation({ summary: 'List products, paginated, optionally filtered by vendor or category' })
+  @ApiResponse({ status: 200, description: 'A page of products plus pagination meta' })
   @Get()
-  findAll(@Query('vendorId') vendorId?:string, @Query('categoryId') categoryId?:string) {
-    return this.productsService.findAll(vendorId, categoryId);
+  findAll(@Query() query:FindProductsQueryDto) {
+    return this.productsService.findAll(query);
   }
 
   @ApiOperation({ summary: 'Get a single product by ID' })

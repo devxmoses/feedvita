@@ -1,5 +1,7 @@
-import {Matches, Min, IsBoolean, IsInt, IsOptional, IsString, MinLength } from "class-validator";
+import {Matches, Min, IsBoolean, IsInt, IsOptional, IsString, MinLength,
+    IsArray, ArrayMinSize, ArrayUnique, IsEnum } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Segment } from '../../../generated/prisma/enums';
 
 export class CreateProductDto {
     @ApiProperty({example: 'Cold Pressed Ginger Shot 250ml', minLength:2})
@@ -44,6 +46,32 @@ export class CreateProductDto {
     @IsOptional()
     @IsString()
     categoryId?:string;
+
+    @ApiProperty({
+        enum: Segment,
+        isArray: true,
+        example: [Segment.PET, Segment.LIVESTOCK],
+        description: 'Who the product is for. At least one, or no filter can reach it.',
+    })
+    @IsArray()
+    @ArrayMinSize(1)
+    @ArrayUnique()
+    @IsEnum(Segment, { each: true })
+    segments!: Segment[];
+
+    @ApiPropertyOptional({
+        isArray: true,
+        example: ['clxdog000000000000000000', 'clxcat000000000000000000'],
+        description: 'Optional species this product suits. Omit for species-agnostic items.',
+    })
+    @IsOptional()
+    @IsArray()
+    @ArrayUnique()
+    @IsString({ each: true })
+    speciesIds?: string[];
+
+
+
 
 
 }

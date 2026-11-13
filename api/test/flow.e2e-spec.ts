@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import request from 'supertest';
+import { INestApplication} from '@nestjs/common';
+import request from 'supertest'
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { configureApp } from '../src/app.setup';
 
 describe('Marketplace flow (e2e)', () => {
   let app: INestApplication;
@@ -19,8 +20,7 @@ describe('Marketplace flow (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    // mirror main.ts so validation behaves exactly as it does in production
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    configureApp(app);
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -68,15 +68,16 @@ describe('Marketplace flow (e2e)', () => {
 
   const listProduct = async (token: string, stock = 10, price = 4999) => {
     const vendor = await http()
-      .post('/vendors')
+      .post('/api/v1/vendors')
       .set('Authorization', `Bearer ${token}`)
       .send({ name: `Green Valley Nutrition ${seq}` })
       .expect(201);
 
     const product = await http()
-      .post('/products')
+      .post('/api/v1/products')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Cold Pressed Ginger Shot 250ml', price, stock, vendorId: vendor.body.id })
+      .send({ name: 'Cold Pressed Ginger Shot 250ml', price, stock, vendorId: vendor.body.id,
+              segments: ['HUMAN'] })
       .expect(201);
 
     return { vendorId: vendor.body.id as string, productId: product.body.id as string };
@@ -84,14 +85,14 @@ describe('Marketplace flow (e2e)', () => {
 
   const addToCart = (token: string, productId: string, quantity: number) =>
     http()
-      .post('/cart/items')
+      .post('/api/v1/cart/items')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId, quantity })
       .expect(201);
 
   it('registers a user over HTTP and returns a usable token pair', async () => {
     const res = await http()
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({ email: 'registered@test.com', password: 'password123', name: 'Registered' })
       .expect(201);
 
@@ -99,7 +100,7 @@ describe('Marketplace flow (e2e)', () => {
     expect(res.body.refresh_token).toBeDefined();
 
     // the issued token actually authenticates against a protected route
-    await http().get('/cart').set('Authorization', `Bearer ${res.body.access_token}`).expect(200);
+    await http().get('/api/v1/cart').set('Authorization', `Bearer ${res.body.access_token}`).expect(200);
   });
 
   it('runs vendor -> product -> cart -> checkout end to end', async () => {
@@ -108,11 +109,11 @@ describe('Marketplace flow (e2e)', () => {
 
     await addToCart(token, productId, 2);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items).toHaveLength(1);
     expect(cart.body.items[0].quantity).toBe(2);
 
-    const order = await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(201);
+    const order = await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(201);
 
     expect(order.body.total).toBe(9998);
     expect(order.body.status).toBe('PENDING');
@@ -124,7 +125,7 @@ describe('Marketplace flow (e2e)', () => {
     const product = await prisma.product.findUnique({ where: { id: productId } });
     expect(product!.stock).toBe(8);
 
-    const emptied = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const emptied = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(emptied.body.items).toHaveLength(0);
   });
 
@@ -135,12 +136,12 @@ describe('Marketplace flow (e2e)', () => {
     await addToCart(token, productId, 2);
 
     await http()
-      .patch(`/cart/items/${productId}`)
+      .patch(`/api/v1/cart/items/${productId}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ quantity: 5 })
       .expect(200);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items[0].quantity).toBe(5);
   });
 
@@ -151,11 +152,11 @@ describe('Marketplace flow (e2e)', () => {
     await addToCart(token, productId, 1);
 
     await http()
-      .delete(`/cart/items/${productId}`)
+      .delete(`/api/v1/cart/items/${productId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items).toHaveLength(0);
   });
 
@@ -165,9 +166,9 @@ describe('Marketplace flow (e2e)', () => {
 
     await addToCart(token, productId, 2);
 
-    await http().delete('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    await http().delete('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items).toHaveLength(0);
   });
 
@@ -178,7 +179,7 @@ describe('Marketplace flow (e2e)', () => {
     await addToCart(token, productId, 2);
     await addToCart(token, productId, 3);
 
-    const cart = await http().get('/cart').set('Authorization', `Bearer ${token}`).expect(200);
+    const cart = await http().get('/api/v1/cart').set('Authorization', `Bearer ${token}`).expect(200);
     expect(cart.body.items).toHaveLength(1);
     expect(cart.body.items[0].quantity).toBe(5);
   });
@@ -186,7 +187,7 @@ describe('Marketplace flow (e2e)', () => {
   it('refuses checkout on an empty cart', async () => {
     const { token } = await seedUser();
 
-    await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(400);
+    await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(400);
   });
 
   it('refuses checkout when stock is short, leaving stock untouched', async () => {
@@ -195,7 +196,7 @@ describe('Marketplace flow (e2e)', () => {
 
     await addToCart(token, productId, 5);
 
-    await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(409);
+    await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(409);
 
     const product = await prisma.product.findUnique({ where: { id: productId } });
     expect(product!.stock).toBe(1);
@@ -206,13 +207,13 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(token, 10);
 
     await addToCart(token, productId, 3);
-    const order = await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(201);
+    const order = await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(201);
 
     const afterCheckout = await prisma.product.findUnique({ where: { id: productId } });
     expect(afterCheckout!.stock).toBe(7);
 
     const cancelled = await http()
-      .patch(`/orders/${order.body.id}/cancel`)
+      .patch(`/api/v1/orders/${order.body.id}/cancel`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(cancelled.body.status).toBe('CANCELLED');
@@ -226,12 +227,12 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(token);
 
     await addToCart(token, productId, 1);
-    const order = await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(201);
+    const order = await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(201);
 
     await prisma.order.update({ where: { id: order.body.id }, data: { status: 'SHIPPED' } });
 
     await http()
-      .patch(`/orders/${order.body.id}/cancel`)
+      .patch(`/api/v1/orders/${order.body.id}/cancel`)
       .set('Authorization', `Bearer ${token}`)
       .expect(409);
   });
@@ -241,19 +242,19 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(owner.token);
     await addToCart(owner.token, productId, 1);
     const order = await http()
-      .post('/orders')
+      .post('/api/v1/orders')
       .set('Authorization', `Bearer ${owner.token}`)
       .expect(201);
 
     const stranger = await seedUser();
 
     await http()
-      .get(`/orders/${order.body.id}`)
+      .get(`/api/v1/orders/${order.body.id}`)
       .set('Authorization', `Bearer ${stranger.token}`)
       .expect(403);
 
     await http()
-      .patch(`/orders/${order.body.id}/cancel`)
+      .patch(`/api/v1/orders/${order.body.id}/cancel`)
       .set('Authorization', `Bearer ${stranger.token}`)
       .expect(403);
   });
@@ -265,9 +266,9 @@ describe('Marketplace flow (e2e)', () => {
     const stranger = await seedUser();
 
     await http()
-      .post('/products')
+      .post('/api/v1/products')
       .set('Authorization', `Bearer ${stranger.token}`)
-      .send({ name: 'Counterfeit Tonic', price: 100, stock: 1, vendorId })
+      .send({ name: 'Counterfeit Tonic', price: 100, stock: 1, vendorId, segments: ['HUMAN'] })
       .expect(403);
   });
 
@@ -275,10 +276,10 @@ describe('Marketplace flow (e2e)', () => {
     const owner = await seedUser();
     const { vendorId, productId } = await listProduct(owner.token);
     await addToCart(owner.token, productId, 2);
-    await http().post('/orders').set('Authorization', `Bearer ${owner.token}`).expect(201);
+    await http().post('/api/v1/orders').set('Authorization', `Bearer ${owner.token}`).expect(201);
 
     const mine = await http()
-      .get(`/orders/vendor/${vendorId}`)
+      .get(`/api/v1/orders/vendor/${vendorId}`)
       .set('Authorization', `Bearer ${owner.token}`)
       .expect(200);
     expect(mine.body).toHaveLength(1);
@@ -286,7 +287,7 @@ describe('Marketplace flow (e2e)', () => {
 
     const stranger = await seedUser();
     await http()
-      .get(`/orders/vendor/${vendorId}`)
+      .get(`/api/v1/orders/vendor/${vendorId}`)
       .set('Authorization', `Bearer ${stranger.token}`)
       .expect(403);
   });
@@ -296,7 +297,7 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(token);
 
     await http()
-      .post('/reviews')
+      .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId, rating: 5, comment: 'Great' })
       .expect(403);
@@ -307,12 +308,12 @@ describe('Marketplace flow (e2e)', () => {
     const { productId } = await listProduct(token);
 
     await addToCart(token, productId, 1);
-    const order = await http().post('/orders').set('Authorization', `Bearer ${token}`).expect(201);
+    const order = await http().post('/api/v1/orders').set('Authorization', `Bearer ${token}`).expect(201);
 
     await prisma.order.update({ where: { id: order.body.id }, data: { status: 'DELIVERED' } });
 
     const review = await http()
-      .post('/reviews')
+      .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId, rating: 5, comment: 'Arrived cold and tasted fresh.' })
       .expect(201);
@@ -320,7 +321,7 @@ describe('Marketplace flow (e2e)', () => {
 
     // the one-review-per-product rule is enforced by the database unique constraint
     await http()
-      .post('/reviews')
+      .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId, rating: 4 })
       .expect(409);
@@ -329,29 +330,29 @@ describe('Marketplace flow (e2e)', () => {
   it('keeps admin-only routes closed to ordinary users', async () => {
     const { token } = await seedUser();
 
-    await http().get('/admin/stats').set('Authorization', `Bearer ${token}`).expect(403);
+    await http().get('/api/v1/admin/stats').set('Authorization', `Bearer ${token}`).expect(403);
   });
 
   it('serves admin stats to an admin', async () => {
     const { token } = await seedUser({ isAdmin: true });
 
-    const res = await http().get('/admin/stats').set('Authorization', `Bearer ${token}`).expect(200);
+    const res = await http().get('/api/v1/admin/stats').set('Authorization', `Bearer ${token}`).expect(200);
 
     expect(typeof res.body.totals.users).toBe('number');
     expect(res.body.revenue).toHaveProperty('collected');
   });
 
   it('requires authentication on protected routes', async () => {
-    await http().get('/cart').expect(401);
-    await http().post('/orders').expect(401);
-    await http().get('/admin/stats').expect(401);
+    await http().get('/api/v1/cart').expect(401);
+    await http().post('/api/v1/orders').expect(401);
+    await http().get('/api/v1/admin/stats').expect(401);
   });
 
   it('rejects an invalid payload before it reaches the service', async () => {
     const { token } = await seedUser();
 
     await http()
-      .post('/cart/items')
+      .post('/api/v1/cart/items')
       .set('Authorization', `Bearer ${token}`)
       .send({ productId: 'p1', quantity: 0 })
       .expect(400);
@@ -360,7 +361,7 @@ describe('Marketplace flow (e2e)', () => {
     it('does not hand out a user record to an anonymous caller', async () => {
     const { user } = await seedUser();
 
-    await http().get(`/users/${user.id}`).expect(401);
+    await http().get(`/api/v1/users/${user.id}`).expect(401);
   });
 
   it("does not let one user read another user's account", async () => {
@@ -368,7 +369,7 @@ describe('Marketplace flow (e2e)', () => {
     const stranger = await seedUser();
 
     await http()
-      .get(`/users/${victim.user.id}`)
+      .get(`/api/v1/users/${victim.user.id}`)
       .set('Authorization', `Bearer ${stranger.token}`)
       .expect(403);
   });
@@ -377,7 +378,7 @@ describe('Marketplace flow (e2e)', () => {
     const me = await seedUser();
 
     const res = await http()
-      .get(`/users/${me.user.id}`)
+      .get(`/api/v1/users/${me.user.id}`)
       .set('Authorization', `Bearer ${me.token}`)
       .expect(200);
 
@@ -390,7 +391,7 @@ describe('Marketplace flow (e2e)', () => {
     const admin = await seedUser({ isAdmin: true });
 
     const res = await http()
-      .get(`/users/${victim.user.id}`)
+      .get(`/api/v1/users/${victim.user.id}`)
       .set('Authorization', `Bearer ${admin.token}`)
       .expect(200);
 
@@ -402,5 +403,419 @@ describe('Marketplace flow (e2e)', () => {
 
     expect(res.body.status).toBe('ok');
   });
+
+    describe('product listing pagination', () => {
+    // three products from one vendor, with known prices so sort order is checkable
+    const seedCatalogue = async () => {
+      const { token } = await seedUser();
+      const vendor = await http()
+        .post('/api/v1/vendors')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: `Green Valley Nutrition ${(seq += 1)}` })
+        .expect(201);
+
+      for (const [name, price] of [
+        ['Layer Mash 25kg', 1500],
+        ['Cold Pressed Ginger Shot 250ml', 4999],
+        ['Omega Oil for Dogs 500ml', 3200],
+      ] as [string, number][]) {
+        await http()
+          .post('/api/v1/products')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name, price, stock: 5, vendorId: vendor.body.id, segments: ['HUMAN'] })
+          .expect(201);
+      }
+
+      return { token, vendorId: vendor.body.id };
+    };
+
+    it('wraps the rows in data with pagination meta', async () => {
+      await seedCatalogue();
+
+      const res = await http().get('/api/v1/products').expect(200);
+
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data).toHaveLength(3);
+      expect(res.body.meta).toEqual({ total: 3, page: 1, limit: 20, pageCount: 1 });
+    });
+
+    it('serves one page at a time and reports how many there are', async () => {
+      await seedCatalogue();
+
+      const first = await http().get('/api/v1/products?page=1&limit=2').expect(200);
+      expect(first.body.data).toHaveLength(2);
+      expect(first.body.meta).toEqual({ total: 3, page: 1, limit: 2, pageCount: 2 });
+
+      const second = await http().get('/api/v1/products?page=2&limit=2').expect(200);
+      expect(second.body.data).toHaveLength(1);
+      expect(second.body.meta.page).toBe(2);
+
+      // no row appears on both pages
+      const ids = [...first.body.data, ...second.body.data].map((p: any) => p.id);
+      expect(new Set(ids).size).toBe(3);
+    });
+
+    it('returns an empty page past the end rather than an error', async () => {
+      await seedCatalogue();
+
+      const res = await http().get('/api/v1/products?page=99&limit=2').expect(200);
+
+      expect(res.body.data).toEqual([]);
+      expect(res.body.meta.total).toBe(3);
+    });
+
+    it('sorts by price in both directions', async () => {
+      await seedCatalogue();
+
+      const asc = await http().get('/api/v1/products?sortBy=price&order=asc').expect(200);
+      expect(asc.body.data.map((p: any) => p.price)).toEqual([1500, 3200, 4999]);
+
+      const desc = await http().get('/api/v1/products?sortBy=price&order=desc').expect(200);
+      expect(desc.body.data.map((p: any) => p.price)).toEqual([4999, 3200, 1500]);
+    });
+
+    it('still honours the vendor filter, and counts only that vendor', async () => {
+      const mine = await seedCatalogue();
+      await seedCatalogue(); // a second vendor's products must not be counted
+
+      const res = await http()
+        .get(`/api/v1/products?vendorId=${mine.vendorId}`)
+        .expect(200);
+
+      expect(res.body.meta.total).toBe(3);
+      expect(res.body.data.every((p: any) => p.vendorId === mine.vendorId)).toBe(true);
+    });
+
+    it('caps limit so one request cannot ask for the whole table', async () => {
+      await http().get('/api/v1/products?limit=10000').expect(400);
+    });
+
+    it('rejects a page or limit that is not a positive integer', async () => {
+      await http().get('/api/v1/products?page=0').expect(400);
+      await http().get('/api/v1/products?page=-1').expect(400);
+      await http().get('/api/v1/products?page=abc').expect(400);
+      await http().get('/api/v1/products?limit=1.5').expect(400);
+    });
+
+    it('refuses to sort by a column that is not on the allowlist', async () => {
+      await http().get('/api/v1/products?sortBy=vendorId').expect(400);
+      await http().get('/api/v1/products?order=sideways').expect(400);
+    });
+
+    it('ignores an unknown query parameter instead of failing', async () => {
+      await seedCatalogue();
+
+      const res = await http().get('/api/v1/products?nonsense=1').expect(200);
+
+      expect(res.body.data).toHaveLength(3);
+    });
+  });
+
+  describe('segment and species filtering', () => {
+    const seedSpecies = async () => {
+      const dog = await prisma.species.create({
+        data: { name: 'Dog', slug: 'dog', segment: 'PET' },
+      });
+      const chicken = await prisma.species.create({
+        data: { name: 'Chicken', slug: 'chicken', segment: 'LIVESTOCK' },
+      });
+      return { dog, chicken };
+    };
+
+    // one product per segment, plus a dual-segment one, so hasSome is observable
+    const seedMixedCatalogue = async () => {
+      const { token } = await seedUser();
+      const vendor = await http()
+        .post('/api/v1/vendors')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: `Green Valley Nutrition ${(seq += 1)}` })
+        .expect(201);
+
+      const { dog, chicken } = await seedSpecies();
+
+      const make = async (
+        name: string,
+        segments: string[],
+        speciesIds: string[] = [],
+      ) => {
+        const res = await http()
+          .post('/api/v1/products')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name, price: 1000, stock: 5, vendorId: vendor.body.id, segments, speciesIds })
+          .expect(201);
+        return res.body;
+      };
+
+      return {
+        token,
+        dog,
+        chicken,
+        ginger: await make('Cold Pressed Ginger Shot 250ml', ['HUMAN']),
+        kibble: await make('Grain Free Kibble 12kg', ['PET'], [dog.id]),
+        mash: await make('Layer Mash 25kg', ['LIVESTOCK'], [chicken.id]),
+        // salmon oil suits dogs and people - the case a category tree cannot express
+        oil: await make('Wild Salmon Oil 500ml', ['HUMAN', 'PET'], [dog.id]),
+      };
+    };
+
+    const seedVendorFor = async (token: string) => {
+      const res = await http()
+        .post('/api/v1/vendors')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: `Green Valley Nutrition ${(seq += 1)}` })
+        .expect(201);
+      return res.body.id;
+    };
+
+    it('stores segments and returns the connected species on create', async () => {
+      const { kibble } = await seedMixedCatalogue();
+
+      expect(kibble.segments).toEqual(['PET']);
+      expect(kibble.species.map((s: any) => s.slug)).toEqual(['dog']);
+    });
+
+    it('requires at least one segment', async () => {
+      const { token } = await seedUser();
+      const vendorId = await seedVendorFor(token);
+
+      await http()
+        .post('/api/v1/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Unreachable Product', price: 100, stock: 1, vendorId })
+        .expect(400);
+
+      await http()
+        .post('/api/v1/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Unreachable Product', price: 100, stock: 1, vendorId, segments: [] })
+        .expect(400);
+    });
+
+    it('rejects a species id that does not exist', async () => {
+      const { token } = await seedUser();
+      const vendorId = await seedVendorFor(token);
+
+      await http()
+        .post('/api/v1/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Mystery Supplement', price: 100, stock: 1, vendorId,
+                segments: ['PET'], speciesIds: ['no-such-species'] })
+        .expect(404);
+    });
+
+    it('replaces the species list on PATCH rather than adding to it', async () => {
+      const { token, kibble, chicken } = await seedMixedCatalogue();
+
+      const patched = await http()
+        .patch(`/api/v1/products/${kibble.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ speciesIds: [chicken.id] })
+        .expect(200);
+
+      expect(patched.body.species.map((s: any) => s.slug)).toEqual(['chicken']);
+    });
+
+    it('clears the species list when PATCHed with an empty array', async () => {
+      const { token, kibble } = await seedMixedCatalogue();
+
+      const patched = await http()
+        .patch(`/api/v1/products/${kibble.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ speciesIds: [] })
+        .expect(200);
+
+      expect(patched.body.species).toEqual([]);
+    });
+
+    it('filters to one segment', async () => {
+      await seedMixedCatalogue();
+
+      const res = await http().get('/api/v1/products?segments=LIVESTOCK').expect(200);
+
+      expect(res.body.meta.total).toBe(1);
+      expect(res.body.data[0].name).toBe('Layer Mash 25kg');
+    });
+
+    it('widens to either segment when the key is repeated', async () => {
+      await seedMixedCatalogue();
+
+      const res = await http()
+        .get('/api/v1/products?segments=PET&segments=LIVESTOCK')
+        .expect(200);
+
+      // kibble (PET), mash (LIVESTOCK) and the dual-segment oil - not the ginger shot
+      expect(res.body.meta.total).toBe(3);
+      expect(res.body.data.map((p: any) => p.name).sort()).toEqual([
+        'Grain Free Kibble 12kg',
+        'Layer Mash 25kg',
+        'Wild Salmon Oil 500ml',
+      ]);
+    });
+
+    it('finds a dual-segment product from either side', async () => {
+      await seedMixedCatalogue();
+
+      const human = await http().get('/api/v1/products?segments=HUMAN').expect(200);
+      const pet = await http().get('/api/v1/products?segments=PET').expect(200);
+
+      const name = 'Wild Salmon Oil 500ml';
+      expect(human.body.data.map((p: any) => p.name)).toContain(name);
+      expect(pet.body.data.map((p: any) => p.name)).toContain(name);
+    });
+
+    it('filters by species independently of segment', async () => {
+      const { dog } = await seedMixedCatalogue();
+
+      const res = await http().get(`/api/v1/products?speciesId=${dog.id}`).expect(200);
+
+      expect(res.body.meta.total).toBe(2);
+      expect(res.body.data.map((p: any) => p.name).sort()).toEqual([
+        'Grain Free Kibble 12kg',
+        'Wild Salmon Oil 500ml',
+      ]);
+    });
+
+    it('combines segment and species, and counts only the intersection', async () => {
+      const { dog } = await seedMixedCatalogue();
+
+      const res = await http()
+        .get(`/api/v1/products?segments=HUMAN&speciesId=${dog.id}`)
+        .expect(200);
+
+      expect(res.body.meta.total).toBe(1);
+      expect(res.body.data[0].name).toBe('Wild Salmon Oil 500ml');
+    });
+
+    it('paginates a segment-filtered listing with a matching total', async () => {
+      await seedMixedCatalogue();
+
+      const res = await http()
+        .get('/api/v1/products?segments=HUMAN&segments=PET&limit=1')
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.meta).toEqual({ total: 3, page: 1, limit: 1, pageCount: 3 });
+    });
+
+    it('rejects a segment that is not in the enum', async () => {
+      await http().get('/api/v1/products?segments=FISH').expect(400);
+      await http().get('/api/v1/products?segments=PET&segments=FISH').expect(400);
+      await http().get('/api/v1/products?segments=pet').expect(400);
+    });
+  });
+
+  describe('segment hierarchy', () => {
+    // POULTRY and AQUACULTURE are kinds of LIVESTOCK. Each product carries the one
+    // accurate tag, so only the filter knows about the hierarchy.
+    const seedFarmCatalogue = async () => {
+      const { token } = await seedUser();
+      const vendor = await http()
+        .post('/api/v1/vendors')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: `Green Valley Nutrition ${(seq += 1)}` })
+        .expect(201);
+
+      const make = async (name: string, segments: string[]) => {
+        const res = await http()
+          .post('/api/v1/products')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name, price: 1000, stock: 5, vendorId: vendor.body.id, segments })
+          .expect(201);
+        return res.body;
+      };
+
+      return {
+        mash: await make('Layer Mash 25kg', ['POULTRY']),
+        fishFeed: await make('Tilapia Grower Pellets 20kg', ['AQUACULTURE']),
+        mineral: await make('Cattle Mineral Lick 5kg', ['LIVESTOCK']),
+        ginger: await make('Cold Pressed Ginger Shot 250ml', ['HUMAN']),
+      };
+    };
+
+    it('includes poultry and aquaculture under LIVESTOCK', async () => {
+      await seedFarmCatalogue();
+
+      const res = await http().get('/api/v1/products?segments=LIVESTOCK').expect(200);
+
+      expect(res.body.meta.total).toBe(3);
+      expect(res.body.data.map((p: any) => p.name).sort()).toEqual([
+        'Cattle Mineral Lick 5kg',
+        'Layer Mash 25kg',
+        'Tilapia Grower Pellets 20kg',
+      ]);
+    });
+
+    it('keeps a narrow kind narrow', async () => {
+      await seedFarmCatalogue();
+
+      const poultry = await http().get('/api/v1/products?segments=POULTRY').expect(200);
+      expect(poultry.body.meta.total).toBe(1);
+      expect(poultry.body.data[0].name).toBe('Layer Mash 25kg');
+
+      const aqua = await http().get('/api/v1/products?segments=AQUACULTURE').expect(200);
+      expect(aqua.body.meta.total).toBe(1);
+      expect(aqua.body.data[0].name).toBe('Tilapia Grower Pellets 20kg');
+    });
+
+    it('does not leak farm products into HUMAN or PET', async () => {
+      await seedFarmCatalogue();
+
+      const human = await http().get('/api/v1/products?segments=HUMAN').expect(200);
+      expect(human.body.meta.total).toBe(1);
+      expect(human.body.data[0].name).toBe('Cold Pressed Ginger Shot 250ml');
+
+      const pet = await http().get('/api/v1/products?segments=PET').expect(200);
+      expect(pet.body.meta.total).toBe(0);
+    });
+
+    it('does not double-count when a parent and its kind are both requested', async () => {
+      await seedFarmCatalogue();
+
+      const res = await http()
+        .get('/api/v1/products?segments=LIVESTOCK&segments=POULTRY')
+        .expect(200);
+
+      expect(res.body.meta.total).toBe(3);
+      expect(res.body.data).toHaveLength(3);
+    });
+
+    it('paginates a widened filter with a matching total', async () => {
+      await seedFarmCatalogue();
+
+      const res = await http()
+        .get('/api/v1/products?segments=LIVESTOCK&limit=2')
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.meta).toEqual({ total: 3, page: 1, limit: 2, pageCount: 2 });
+    });
+  });
+
+  describe('vendor listing pagination', () => {
+    it('paginates and sorts vendors by name', async () => {
+      const { token } = await seedUser();
+      for (const name of ['Zebra Feeds', 'Alpha Wellness', 'Mid Valley Produce']) {
+        await http()
+          .post('/api/v1/vendors')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name })
+          .expect(201);
+      }
+
+      const res = await http().get('/api/v1/vendors?sortBy=name&order=asc&limit=2').expect(200);
+
+      expect(res.body.data.map((v: any) => v.name)).toEqual([
+        'Alpha Wellness',
+        'Mid Valley Produce',
+      ]);
+      expect(res.body.meta).toEqual({ total: 3, page: 1, limit: 2, pageCount: 2 });
+    });
+
+    it('applies the same validation to the vendor listing', async () => {
+      await http().get('/api/v1/vendors?limit=10000').expect(400);
+      await http().get('/api/v1/vendors?sortBy=ownerId').expect(400);
+    });
+  });
+
 
 });
