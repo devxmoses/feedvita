@@ -14,19 +14,20 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  name          String
-  isVendor      Boolean        @default(false)
-  isAdmin       Boolean        @default(false)
-  vendors       Vendor[]
-  refreshTokens RefreshToken[]
-  orders        Order[]
-  cart          Cart?
-  reviews       Review[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id               String         @id @default(cuid())
+  email            String         @unique
+  passwordHash     String
+  name             String
+  isVendor         Boolean        @default(false)
+  isAdmin          Boolean        @default(false)
+  vendors          Vendor[]
+  refreshTokens    RefreshToken[]
+  orders           Order[]
+  cart             Cart?
+  reviews          Review[]
+  suggestedSpecies Species[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 }
 
 model RefreshToken {
@@ -63,6 +64,30 @@ model Category {
   updatedAt DateTime   @updatedAt
 }
 
+enum Segment {
+  HUMAN
+  PET
+  POULTRY
+  AQUACULTURE
+  LIVESTOCK
+}
+
+model Species {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  slug          String    @unique
+  segment       Segment
+  products      Product[]
+  isApproved    Boolean   @default(false)
+  suggestedById String?
+  suggestedBy   User?     @relation(fields: [suggestedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([segment])
+  @@index([isApproved])
+}
+
 model Product {
   id          String      @id @default(cuid())
   name        String
@@ -71,6 +96,8 @@ model Product {
   price       Int
   stock       Int         @default(0)
   isActive    Boolean     @default(true)
+  segments    Segment[]
+  species     Species[]
   vendorId    String
   vendor      Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   categoryId  String?
@@ -82,6 +109,7 @@ model Product {
   updatedAt   DateTime    @updatedAt
 
   @@unique([vendorId, slug])
+  @@index([segments(ops: ArrayOps)], type: Gin)
 }
 
 enum OrderStatus {

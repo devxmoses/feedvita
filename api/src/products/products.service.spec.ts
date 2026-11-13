@@ -3,6 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FindProductsQueryDto } from './dto/find-products-query.dto';
+import { Segment } from '../../generated/prisma/enums';
 
 describe('ProductsService', () => {
   let service: ProductsService;
@@ -12,7 +13,10 @@ describe('ProductsService', () => {
     id: 'p1', name: 'Cold Pressed Ginger Shot 250ml', slug: 'cold-pressed-ginger-shot-250ml',
     price: 4999, stock: 10, isActive: true, vendorId: 'v1',
   };
-  const BASE = { name: 'Cold Pressed Ginger Shot 250ml', price: 4999, vendorId: 'v1' };
+  const BASE = {
+    name: 'Cold Pressed Ginger Shot 250ml', price: 4999, vendorId: 'v1',
+    segments: [Segment.HUMAN],
+  };
 
   beforeEach(async () => {
     prisma = {
@@ -25,6 +29,13 @@ describe('ProductsService', () => {
         count: jest.fn().mockResolvedValue(1),
       },
       category: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'Beverages' }) },
+      // mirror Prisma: `in` returns a row for each id that exists. The default
+      // echoes every requested id back, so tests opt in to a missing one.
+      species: {
+        findMany: jest.fn(({ where }: any) =>
+          Promise.resolve((where.id.in as string[]).map((id) => ({ id }))),
+        ),
+      },
       // the array form of $transaction: Prisma runs the operations it is handed
       // in one transaction, so the page and the count see the same snapshot
       $transaction: jest.fn((ops: any[]) => Promise.all(ops)),
@@ -85,6 +96,106 @@ describe('ProductsService', () => {
       await service.create(BASE);
 
       expect(prisma.category.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('create with species', () => {
+    it('connects the species it was given', async () => {
+      await service.create({ ...BASE, speciesIds: ['s1', 's2'] });
+
+      expect(prisma.product.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            species: { connect: [{ id: 's1' }, { id: 's2' }] },
+          }),
+        }),
+      );
+    });
+
+    it('does not send speciesIds to Prisma as a column', async () => {
+      await service.create({ ...BASE, speciesIds: ['s1', 's2'] });
+
+      const data = prisma.product.create.mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('speciesIds');
+    });
+
+    it('omits the relation entirely when no species are given', async () => {
+      await service.create(BASE);
+
+      const data = prisma.product.create.mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('species');
+      expect(prisma.species.findMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a species id that does not exist, naming the missing one', async () => {
+      prisma.species.findMany.mockResolvedValue([{ id: 's1' }]);
+
+      await expect(
+        service.create({ ...BASE, speciesIds: ['s1', 'ghost'] }),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.create({ ...BASE, speciesIds: ['s1', 'ghost'] }),
+      ).rejects.toThrow('ghost');
+
+      expect(prisma.product.create).not.toHaveBeenCalled();
+    });
+
+    it('stores the segments it was given', async () => {
+      await service.create({ ...BASE, segments: [Segment.PET, Segment.LIVESTOCK] });
+
+      expect(prisma.product.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            segments: [Segment.PET, Segment.LIVESTOCK],
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('update with species', () => {
+    it('replaces the species list rather than adding to it', async () => {
+      await service.update('p1', { speciesIds: ['s1'] });
+
+      expect(prisma.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ species: { set: [{ id: 's1' }] } }),
+        }),
+      );
+    });
+
+    it('does not send speciesIds to Prisma as a column', async () => {
+      await service.update('p1', { speciesIds: ['s1'] });
+
+      const data = prisma.product.update.mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('speciesIds');
+    });
+
+    it('clears the species list when given an empty array', async () => {
+      await service.update('p1', { speciesIds: [] });
+
+      expect(prisma.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ species: { set: [] } }),
+        }),
+      );
+    });
+
+    it('leaves species untouched when the key is absent', async () => {
+      await service.update('p1', { price: 5999 });
+
+      const data = prisma.product.update.mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('species');
+    });
+
+    it('rejects a species id that does not exist', async () => {
+      prisma.species.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.update('p1', { speciesIds: ['ghost'] }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prisma.product.update).not.toHaveBeenCalled();
     });
   });
 
@@ -171,6 +282,74 @@ describe('ProductsService', () => {
       expect(result.meta).toEqual({ total: 47, page: 2, limit: 20, pageCount: 3 });
     });
 
+    it('matches any of the requested segments, not all of them', async () => {
+      await service.findAll(query({ segments: [Segment.PET, Segment.HUMAN] }));
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { segments: { hasSome: [Segment.PET, Segment.HUMAN] } },
+        }),
+      );
+    });
+
+    // LIVESTOCK is a parent of POULTRY and AQUACULTURE, so the filter has to widen
+    // or a chicken feed tagged POULTRY is invisible under the livestock navigation
+    it('widens LIVESTOCK to include its kinds before querying', async () => {
+      await service.findAll(query({ segments: [Segment.LIVESTOCK] }));
+
+      const where = prisma.product.findMany.mock.calls[0][0].where;
+      expect(where.segments.hasSome.sort()).toEqual(
+        [Segment.AQUACULTURE, Segment.LIVESTOCK, Segment.POULTRY].sort(),
+      );
+    });
+
+    it('does not widen a narrow kind', async () => {
+      await service.findAll(query({ segments: [Segment.POULTRY] }));
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { segments: { hasSome: [Segment.POULTRY] } },
+        }),
+      );
+    });
+
+    it('counts against the widened filter, not the requested one', async () => {
+      await service.findAll(query({ segments: [Segment.LIVESTOCK] }));
+
+      const countWhere = prisma.product.count.mock.calls[0][0].where;
+      expect(countWhere.segments.hasSome).toHaveLength(3);
+    });
+
+    it('ignores an empty segments array rather than matching nothing', async () => {
+      await service.findAll(query({ segments: [] }));
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} }),
+      );
+    });
+
+    it('filters by species through the relation', async () => {
+      await service.findAll(query({ speciesId: 's1' }));
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { species: { some: { id: 's1' } } } }),
+      );
+    });
+
+    it('combines segment, species and vendor filters', async () => {
+      await service.findAll(
+        query({ vendorId: 'v1', segments: [Segment.PET], speciesId: 's1' }),
+      );
+
+      expect(prisma.product.count).toHaveBeenCalledWith({
+        where: {
+          vendorId: 'v1',
+          segments: { hasSome: [Segment.PET] },
+          species: { some: { id: 's1' } },
+        },
+      });
+    });
+
     it('reports a pageCount of 0 for an empty result set', async () => {
       prisma.product.findMany.mockResolvedValue([]);
       prisma.product.count.mockResolvedValue(0);
@@ -214,10 +393,12 @@ describe('ProductsService', () => {
     it('normalises a new slug', async () => {
       await service.update('p1', { slug: 'New SLUG' });
 
-      expect(prisma.product.update).toHaveBeenCalledWith({
-        where: { id: 'p1' },
-        data: { slug: 'new-slug' },
-      });
+      expect(prisma.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'p1' },
+          data: { slug: 'new-slug' },
+        }),
+      );
     });
 
     it('leaves the slug alone when the patch does not mention it', async () => {

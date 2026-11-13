@@ -53,9 +53,11 @@ per-vendor fulfilment are next.
 | Category tree, reviews gated on delivered purchase | ✅ built |
 | Admin analytics | ✅ built |
 | Rate limiting, global exception mapping, OpenAPI docs | ✅ built |
-| Test suite — 211 unit, 42 end-to-end | ✅ built |
+| Test suite — 269 unit, 88 end-to-end | ✅ built |
 | `/api/v1` global prefix, `/health` excluded | ✅ built |
 | Pagination, sorting and filtering on public listings | ✅ built |
+| Segment and species faceting, with a segment hierarchy | ✅ built |
+| Vendor-suggested species with admin approval and merge | ✅ built |
 | Per-vendor order splitting (`VendorOrder`) | 🚧 planned |
 | `ProductVariant`, `Address`, `DeliveryZone`, `Notification` | 🚧 planned |
 | Vendor approval flow | 🚧 planned |
@@ -115,6 +117,8 @@ moment an admin approves.
 - ✅ **JWT refresh rotation** — 15m access tokens, SHA-256-hashed 7d refresh tokens
 - ✅ **Atomic checkout** — stock decrement, order creation and cart clearing in one `$transaction`
 - ✅ **Centralised Prisma error mapping** — `P2002` → 409, `P2025` → 404, `P2003` → 400
+- ✅ **Taxonomy and facets kept apart** — `Category` says what a product *is*,
+  `segments` and `species` say who it is *for*
 - ✅ **One app-configuration function** — `src/app.setup.ts` is called by both `main.ts`
   and the e2e suite, so the tested app cannot drift from the real one
 - 🚧 **Monorepo** via npm workspaces (`apps/api`, `apps/web`, `packages/*`)
@@ -139,7 +143,13 @@ User  (isVendor / isAdmin flags)
  └── Review (1:N)         unique per (product, author)
 
 Category   self-referential tree (parent / children)
- └── Product (1:N)
+ └── Product (1:N)       what the thing IS
+
+Species    Dog · Chicken · …, each tagged with its own Segment
+ └── Product (M:N)       which animals it suits
+
+Segment    HUMAN · PET · LIVESTOCK (· POULTRY · AQUACULTURE, kinds of livestock)
+ └── Product.segments[]  who it is FOR - an array, so one product serves several
 
 Payment → Order (1:N)     one row per Stripe PaymentIntent
 
@@ -172,6 +182,59 @@ they're sequenced in and why.
 ---
 
 ## Design notes
+
+### Why audience is a facet, not a parent category
+
+The catalogue covers people, pets and livestock, but those are not three branches of
+one tree. Make `Pets` a parent category and you need a `Supplements` node under it,
+another under `Livestock`, another under `People` — the same subtree cloned three
+times. Worse, a salmon oil that suits both dogs and their owners has to pick one
+branch or be listed twice.
+
+So `Category` carries only *what the thing is* — Dry Food, Supplements, Feeders,
+Beverages — and stays audience-agnostic. Who it is for lives in two separate fields:
+
+- **`segments`** — `HUMAN` · `PET` · `LIVESTOCK` · `POULTRY` · `AQUACULTURE`, a
+  Postgres enum array on `Product`. A small closed set, so the database enforces the
+  vocabulary and there is no join. Indexed with GIN, because a B-tree cannot answer
+  *does this array contain `PET`*.
+- **`species`** — a many-to-many to `Species` (Dog, Chicken, …). Open-ended, carries
+  its own name and slug for category pages, and extends without a migration.
+
+They are deliberately independent. Species mostly implies segment — a dog is a pet —
+but segment is still stored on the product, because species-agnostic items exist (a
+feed scoop, a stable disinfectant) and humans are not in the species table.
+
+Filtering uses `hasSome`, not `hasEvery`: ticking two segment boxes means *either*,
+which is what a shopper expects. `set`, not `connect`, on `PATCH`, so editing a
+product replaces its species list rather than appending to it — and `speciesIds: []`
+clears it.
+
+`POULTRY` and `AQUACULTURE` are kinds of livestock rather than peers of it, so the
+enum carries two levels. Each product is tagged with the one accurate value, and
+`src/products/segment-hierarchy.ts` widens the *filter* instead — asking for
+`LIVESTOCK` matches all three, asking for `POULTRY` stays narrow. Expanding on read
+rather than on write means a vendor cannot forget to add the parent, and a chicken
+feed can never go missing from the livestock navigation.
+
+### Who may add a species
+
+Shared catalogue vocabulary is open to vendors but not unmoderated. A vendor whose
+product needs a species nobody has listed `POST`s it and gets it back immediately,
+flagged `isApproved: false`:
+
+- **usable at once** on their own products, so nothing is blocked on review
+- **hidden from `GET /species`**, so no shopper sees an unreviewed suggestion
+- **deduplicated by slug** — a second vendor submitting `alpaca` receives the
+  existing row untouched rather than a `409`, so the race is settled by a single
+  `upsert` rather than by the application
+
+An admin then approves it, corrects the name or segment, or merges a duplicate into
+the real species. Merging moves every product link inside one transaction before
+deleting the duplicate — the join table cascades, so an unwrapped delete would
+silently drop the associations it had not yet moved. Deleting a species that
+products still reference is refused with a `409` pointing at merge instead.
+
 
 The decisions in the code worth knowing about. All of these are built.
 
@@ -245,6 +308,23 @@ checks expect it. Interactive docs are at `/api/docs`, also unprefixed.
 | `GET` | `/products/:id` | public |
 | `PATCH` · `DELETE` | `/products/:id` | product's vendor owner or admin |
 
+### Species
+| Method | Endpoint | Access |
+|---|---|---|
+| `GET` | `/species` | public — approved only, A-Z, `?segment=` filterable |
+| `GET` | `/species/mine` | authenticated — your suggestions, pending included |
+| `GET` | `/species/pending` | admin — the review queue |
+| `GET` | `/species/:id` | public |
+| `POST` | `/species` | vendor — creates unapproved, or returns the existing match (5/hour) |
+| `PATCH` | `/species/:id/approve` | admin |
+| `PATCH` | `/species/:id` | admin — correct name or segment |
+| `POST` | `/species/:id/merge` | admin — move product links to `targetId`, delete this one |
+| `DELETE` | `/species/:id` | admin — only when no product references it |
+
+`/species/mine` and `/species/pending` are declared before `/species/:id`, because
+Nest matches routes in declaration order and the parameter would otherwise swallow
+both literals.
+
 #### Paginated listings
 
 `GET /products` and `GET /vendors` return a page, not a bare array:
@@ -263,6 +343,8 @@ checks expect it. Interactive docs are at `/api/docs`, also unprefixed.
 | `sortBy` | `createdAt` | products: `createdAt`, `price`, `name`, `stock` · vendors: `createdAt`, `name` |
 | `order` | `desc` | `asc` or `desc` |
 | `vendorId`, `categoryId` | — | products only; the `total` reflects the filter |
+| `segments` | — | products only; repeat the key to widen — `?segments=PET&segments=HUMAN` matches **either**. `LIVESTOCK` also matches `POULTRY` and `AQUACULTURE` |
+| `speciesId` | — | products only; matches products connected to that species |
 
 Anything outside those bounds is a `400` before the query is built — `?limit=10000`,
 `?page=0` and `?sortBy=passwordHash` are all rejected. Unknown parameters are stripped
@@ -325,15 +407,18 @@ nuvita/
 │   │   ├── app.setup.ts           # shared by main.ts and the e2e suite
 │   │   ├── app.module.ts
 │   │   ├── common/
+│   │   │   ├── dto/               # pagination query + {data, meta} envelope
 │   │   │   ├── filters/           # global Prisma → HTTP mapping
 │   │   │   └── utils/
 │   │   ├── prisma/
 │   │   ├── auth/      users/      vendors/
 │   │   ├── products/  categories/ carts/
-│   │   ├── orders/    reviews/    payments/
+│   │   ├── species/   orders/     reviews/
+│   │   ├── payments/
 │   │   └── admin/
 │   ├── prisma/
 │   │   ├── schema.prisma
+│   │   ├── seed.ts                # the starting species list, idempotent
 │   │   └── migrations/
 │   ├── test/                      # e2e suite + disposable-DB guard
 │   └── docker-compose.test.yml
@@ -401,10 +486,10 @@ PORT=3000
 
 ```bash
 npx tsc --noEmit        # type check first - it catches what Jest cannot
-npm test                # 211 unit tests
+npm test                # 269 unit tests
 
 npm run test:e2e:up     # start the throwaway Postgres container
-npm run test:e2e        # 31 tests against a real database
+npm run test:e2e        # 88 tests against a real database
 npm run test:e2e:down   # tear it down
 ```
 

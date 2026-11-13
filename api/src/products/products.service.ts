@@ -5,10 +5,29 @@ import { slugify } from '../common/utils/slugify';
 import { PrismaService } from '../prisma/prisma.service';
 import { FindProductsQueryDto } from './dto/find-products-query.dto';
 import { paginate } from '../common/dto/paginated';
+import { expandSegments } from './segment-hierarchy';
 
 @Injectable()
 export class ProductsService {
   constructor(private readonly prisma:PrismaService){}
+
+    // Prisma's connect/set throws P2025 for a missing id, which the global filter
+  // maps to a 404 that says nothing useful. Checking first names the bad ids.
+  private async assertSpeciesExist(speciesIds:string[]){
+    if(!speciesIds.length) return;
+
+    const found = await this.prisma.species.findMany({
+      where:{id:{in:speciesIds}},
+      select:{id:true},
+    });
+
+    const foundIds = new Set(found.map((s)=>s.id));
+    const missing = speciesIds.filter((id)=>!foundIds.has(id));
+
+    if(missing.length){
+      throw new NotFoundException(`Species not found: ${missing.join(', ')}`);
+    }
+  }
 
   async create(createProductDto:CreateProductDto){
     const slug = slugify(createProductDto.slug??createProductDto.name);
@@ -23,22 +42,35 @@ export class ProductsService {
         )
       }
     }
+
+    const {speciesIds, ...rest} = createProductDto;
+
+    if(speciesIds?.length){
+      await this.assertSpeciesExist(speciesIds);
+    }
+
     return this.prisma.product.create({
       data:{
-        ...createProductDto,
+        ...rest,
         slug,
         stock: createProductDto.stock ?? 0,
         isActive:createProductDto.isActive??true,
+        ...(speciesIds?.length
+          ? {species:{connect:speciesIds.map((id)=>({id}))}}
+          : {}),
       },
+       include:{species:true},
     });
   }
 
 
   async findAll(query:FindProductsQueryDto){
-    const {page, limit, sortBy, order, vendorId, categoryId} = query;
+    const {page, limit, sortBy, order, vendorId, categoryId, segments, speciesId} = query;
     const where = {
       ...(vendorId?{vendorId}:{}),
-      ...(categoryId ? {categoryId} : {})
+      ...(categoryId ? {categoryId} : {}),
+      ...(segments?.length ? {segments:{hasSome:expandSegments(segments)}} : {}),
+      ...(speciesId ? {species:{some:{id:speciesId}}} : {}),
     }
 
     const [data, total] = await this.prisma.$transaction([
@@ -74,13 +106,19 @@ export class ProductsService {
       }
     }
 
-    const {slug, ...rest} = updateProductDto;
+    const {slug,speciesIds, ...rest} = updateProductDto;
+     if(speciesIds){
+      await this.assertSpeciesExist(speciesIds);
+    }
+
     return this.prisma.product.update({
       where:{id},
       data:{
         ...rest,
         ...(slug?{slug:slugify(slug)}:{}),
-      }
+        ...(speciesIds?{species:{set:speciesIds.map((sid)=>({id:sid}))}}:{}),
+      },
+      include:{species:true},
     })
   }
 

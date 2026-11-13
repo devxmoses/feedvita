@@ -76,7 +76,8 @@ describe('Marketplace flow (e2e)', () => {
     const product = await http()
       .post('/api/v1/products')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Cold Pressed Ginger Shot 250ml', price, stock, vendorId: vendor.body.id })
+      .send({ name: 'Cold Pressed Ginger Shot 250ml', price, stock, vendorId: vendor.body.id,
+              segments: ['HUMAN'] })
       .expect(201);
 
     return { vendorId: vendor.body.id as string, productId: product.body.id as string };
@@ -267,7 +268,7 @@ describe('Marketplace flow (e2e)', () => {
     await http()
       .post('/api/v1/products')
       .set('Authorization', `Bearer ${stranger.token}`)
-      .send({ name: 'Counterfeit Tonic', price: 100, stock: 1, vendorId })
+      .send({ name: 'Counterfeit Tonic', price: 100, stock: 1, vendorId, segments: ['HUMAN'] })
       .expect(403);
   });
 
@@ -421,7 +422,7 @@ describe('Marketplace flow (e2e)', () => {
         await http()
           .post('/api/v1/products')
           .set('Authorization', `Bearer ${token}`)
-          .send({ name, price, stock: 5, vendorId: vendor.body.id })
+          .send({ name, price, stock: 5, vendorId: vendor.body.id, segments: ['HUMAN'] })
           .expect(201);
       }
 
@@ -507,6 +508,286 @@ describe('Marketplace flow (e2e)', () => {
       const res = await http().get('/api/v1/products?nonsense=1').expect(200);
 
       expect(res.body.data).toHaveLength(3);
+    });
+  });
+
+  describe('segment and species filtering', () => {
+    const seedSpecies = async () => {
+      const dog = await prisma.species.create({
+        data: { name: 'Dog', slug: 'dog', segment: 'PET' },
+      });
+      const chicken = await prisma.species.create({
+        data: { name: 'Chicken', slug: 'chicken', segment: 'LIVESTOCK' },
+      });
+      return { dog, chicken };
+    };
+
+    // one product per segment, plus a dual-segment one, so hasSome is observable
+    const seedMixedCatalogue = async () => {
+      const { token } = await seedUser();
+      const vendor = await http()
+        .post('/api/v1/vendors')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: `Green Valley Nutrition ${(seq += 1)}` })
+        .expect(201);
+
+      const { dog, chicken } = await seedSpecies();
+
+      const make = async (
+        name: string,
+        segments: string[],
+        speciesIds: string[] = [],
+      ) => {
+        const res = await http()
+          .post('/api/v1/products')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name, price: 1000, stock: 5, vendorId: vendor.body.id, segments, speciesIds })
+          .expect(201);
+        return res.body;
+      };
+
+      return {
+        token,
+        dog,
+        chicken,
+        ginger: await make('Cold Pressed Ginger Shot 250ml', ['HUMAN']),
+        kibble: await make('Grain Free Kibble 12kg', ['PET'], [dog.id]),
+        mash: await make('Layer Mash 25kg', ['LIVESTOCK'], [chicken.id]),
+        // salmon oil suits dogs and people - the case a category tree cannot express
+        oil: await make('Wild Salmon Oil 500ml', ['HUMAN', 'PET'], [dog.id]),
+      };
+    };
+
+    const seedVendorFor = async (token: string) => {
+      const res = await http()
+        .post('/api/v1/vendors')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: `Green Valley Nutrition ${(seq += 1)}` })
+        .expect(201);
+      return res.body.id;
+    };
+
+    it('stores segments and returns the connected species on create', async () => {
+      const { kibble } = await seedMixedCatalogue();
+
+      expect(kibble.segments).toEqual(['PET']);
+      expect(kibble.species.map((s: any) => s.slug)).toEqual(['dog']);
+    });
+
+    it('requires at least one segment', async () => {
+      const { token } = await seedUser();
+      const vendorId = await seedVendorFor(token);
+
+      await http()
+        .post('/api/v1/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Unreachable Product', price: 100, stock: 1, vendorId })
+        .expect(400);
+
+      await http()
+        .post('/api/v1/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Unreachable Product', price: 100, stock: 1, vendorId, segments: [] })
+        .expect(400);
+    });
+
+    it('rejects a species id that does not exist', async () => {
+      const { token } = await seedUser();
+      const vendorId = await seedVendorFor(token);
+
+      await http()
+        .post('/api/v1/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Mystery Supplement', price: 100, stock: 1, vendorId,
+                segments: ['PET'], speciesIds: ['no-such-species'] })
+        .expect(404);
+    });
+
+    it('replaces the species list on PATCH rather than adding to it', async () => {
+      const { token, kibble, chicken } = await seedMixedCatalogue();
+
+      const patched = await http()
+        .patch(`/api/v1/products/${kibble.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ speciesIds: [chicken.id] })
+        .expect(200);
+
+      expect(patched.body.species.map((s: any) => s.slug)).toEqual(['chicken']);
+    });
+
+    it('clears the species list when PATCHed with an empty array', async () => {
+      const { token, kibble } = await seedMixedCatalogue();
+
+      const patched = await http()
+        .patch(`/api/v1/products/${kibble.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ speciesIds: [] })
+        .expect(200);
+
+      expect(patched.body.species).toEqual([]);
+    });
+
+    it('filters to one segment', async () => {
+      await seedMixedCatalogue();
+
+      const res = await http().get('/api/v1/products?segments=LIVESTOCK').expect(200);
+
+      expect(res.body.meta.total).toBe(1);
+      expect(res.body.data[0].name).toBe('Layer Mash 25kg');
+    });
+
+    it('widens to either segment when the key is repeated', async () => {
+      await seedMixedCatalogue();
+
+      const res = await http()
+        .get('/api/v1/products?segments=PET&segments=LIVESTOCK')
+        .expect(200);
+
+      // kibble (PET), mash (LIVESTOCK) and the dual-segment oil - not the ginger shot
+      expect(res.body.meta.total).toBe(3);
+      expect(res.body.data.map((p: any) => p.name).sort()).toEqual([
+        'Grain Free Kibble 12kg',
+        'Layer Mash 25kg',
+        'Wild Salmon Oil 500ml',
+      ]);
+    });
+
+    it('finds a dual-segment product from either side', async () => {
+      await seedMixedCatalogue();
+
+      const human = await http().get('/api/v1/products?segments=HUMAN').expect(200);
+      const pet = await http().get('/api/v1/products?segments=PET').expect(200);
+
+      const name = 'Wild Salmon Oil 500ml';
+      expect(human.body.data.map((p: any) => p.name)).toContain(name);
+      expect(pet.body.data.map((p: any) => p.name)).toContain(name);
+    });
+
+    it('filters by species independently of segment', async () => {
+      const { dog } = await seedMixedCatalogue();
+
+      const res = await http().get(`/api/v1/products?speciesId=${dog.id}`).expect(200);
+
+      expect(res.body.meta.total).toBe(2);
+      expect(res.body.data.map((p: any) => p.name).sort()).toEqual([
+        'Grain Free Kibble 12kg',
+        'Wild Salmon Oil 500ml',
+      ]);
+    });
+
+    it('combines segment and species, and counts only the intersection', async () => {
+      const { dog } = await seedMixedCatalogue();
+
+      const res = await http()
+        .get(`/api/v1/products?segments=HUMAN&speciesId=${dog.id}`)
+        .expect(200);
+
+      expect(res.body.meta.total).toBe(1);
+      expect(res.body.data[0].name).toBe('Wild Salmon Oil 500ml');
+    });
+
+    it('paginates a segment-filtered listing with a matching total', async () => {
+      await seedMixedCatalogue();
+
+      const res = await http()
+        .get('/api/v1/products?segments=HUMAN&segments=PET&limit=1')
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.meta).toEqual({ total: 3, page: 1, limit: 1, pageCount: 3 });
+    });
+
+    it('rejects a segment that is not in the enum', async () => {
+      await http().get('/api/v1/products?segments=FISH').expect(400);
+      await http().get('/api/v1/products?segments=PET&segments=FISH').expect(400);
+      await http().get('/api/v1/products?segments=pet').expect(400);
+    });
+  });
+
+  describe('segment hierarchy', () => {
+    // POULTRY and AQUACULTURE are kinds of LIVESTOCK. Each product carries the one
+    // accurate tag, so only the filter knows about the hierarchy.
+    const seedFarmCatalogue = async () => {
+      const { token } = await seedUser();
+      const vendor = await http()
+        .post('/api/v1/vendors')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: `Green Valley Nutrition ${(seq += 1)}` })
+        .expect(201);
+
+      const make = async (name: string, segments: string[]) => {
+        const res = await http()
+          .post('/api/v1/products')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name, price: 1000, stock: 5, vendorId: vendor.body.id, segments })
+          .expect(201);
+        return res.body;
+      };
+
+      return {
+        mash: await make('Layer Mash 25kg', ['POULTRY']),
+        fishFeed: await make('Tilapia Grower Pellets 20kg', ['AQUACULTURE']),
+        mineral: await make('Cattle Mineral Lick 5kg', ['LIVESTOCK']),
+        ginger: await make('Cold Pressed Ginger Shot 250ml', ['HUMAN']),
+      };
+    };
+
+    it('includes poultry and aquaculture under LIVESTOCK', async () => {
+      await seedFarmCatalogue();
+
+      const res = await http().get('/api/v1/products?segments=LIVESTOCK').expect(200);
+
+      expect(res.body.meta.total).toBe(3);
+      expect(res.body.data.map((p: any) => p.name).sort()).toEqual([
+        'Cattle Mineral Lick 5kg',
+        'Layer Mash 25kg',
+        'Tilapia Grower Pellets 20kg',
+      ]);
+    });
+
+    it('keeps a narrow kind narrow', async () => {
+      await seedFarmCatalogue();
+
+      const poultry = await http().get('/api/v1/products?segments=POULTRY').expect(200);
+      expect(poultry.body.meta.total).toBe(1);
+      expect(poultry.body.data[0].name).toBe('Layer Mash 25kg');
+
+      const aqua = await http().get('/api/v1/products?segments=AQUACULTURE').expect(200);
+      expect(aqua.body.meta.total).toBe(1);
+      expect(aqua.body.data[0].name).toBe('Tilapia Grower Pellets 20kg');
+    });
+
+    it('does not leak farm products into HUMAN or PET', async () => {
+      await seedFarmCatalogue();
+
+      const human = await http().get('/api/v1/products?segments=HUMAN').expect(200);
+      expect(human.body.meta.total).toBe(1);
+      expect(human.body.data[0].name).toBe('Cold Pressed Ginger Shot 250ml');
+
+      const pet = await http().get('/api/v1/products?segments=PET').expect(200);
+      expect(pet.body.meta.total).toBe(0);
+    });
+
+    it('does not double-count when a parent and its kind are both requested', async () => {
+      await seedFarmCatalogue();
+
+      const res = await http()
+        .get('/api/v1/products?segments=LIVESTOCK&segments=POULTRY')
+        .expect(200);
+
+      expect(res.body.meta.total).toBe(3);
+      expect(res.body.data).toHaveLength(3);
+    });
+
+    it('paginates a widened filter with a matching total', async () => {
+      await seedFarmCatalogue();
+
+      const res = await http()
+        .get('/api/v1/products?segments=LIVESTOCK&limit=2')
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.meta).toEqual({ total: 3, page: 1, limit: 2, pageCount: 2 });
     });
   });
 
